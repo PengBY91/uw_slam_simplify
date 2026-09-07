@@ -187,7 +187,7 @@ r_ba = ba_j − ba_i
 精度        ATE rmse=0.085823429 m mean=0.0706 m max=0.1465 m（12 匹配位姿）
 无泄漏      原始 / 删除 GT / GT 位姿偏移 3 m / GT 时间偏移 5 s 四次算法轨迹逐字节相同
 非回归      synthetic_smoke 的 bag 与轨迹逐字节不变，4 迭代、ATE 0.0999721 m
-全仓        708 条 CTest 全绿，layer lint 与 realtime traceability lint 通过
+全仓        708 条 CTest 全绿，layer lint 通过（历史验收时点记录）
 ```
 
 迭代数 13 只作诊断记录，按第 8 节不设 4–10 硬门槛。

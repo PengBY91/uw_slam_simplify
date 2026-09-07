@@ -8,8 +8,8 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](./LICENSE)
 
 `uw_slam` 把水下 SLAM 中的核心消息与接口、传感器前端、因子构建、状态估计、地图管理、
-仿真/数据集/ROS2 接入和评测拆成可独立演进的模块。跨语言数据统一使用 Protobuf，录制与
-回放统一使用 MCAP，算法核心不依赖 ROS2 或 HoloOcean。
+仿真接入和评测拆成可独立演进的模块。跨语言数据统一使用 Protobuf，录制与
+回放统一使用 MCAP，算法核心不依赖 HoloOcean。
 
 ## 导航
 
@@ -17,7 +17,6 @@
 - [核心能力](#核心能力)
 - [快速开始](#快速开始)
 - [运行端到端 Demo](#运行端到端-demo)
-- [在线辅助与实时闭环（ROV）](#在线辅助与实时闭环rov)
 - [架构](#架构)（含[一张图看懂代码与框架](#一张图看懂代码与框架)）
 - [开发指南](#开发指南)
 - [配置与外部接入](#配置与外部接入)
@@ -28,34 +27,27 @@
 
 ## 这个仓库是什么
 
-第一次接触本仓库，建议先建立两个坐标：**两条主线** 和 **一条铁律**。
+第一次接触本仓库，建议先建立一个坐标：**一条主线** 和 **一条铁律**。
 
-### 两条主线
+### 一条主线：离线 SLAM 管线
 
-**主线一：离线 SLAM 管线（成熟度最高）。** 把传感器数据录成统一的 MCAP bag
-（合成数据由 `apps/synth_bag_gen` 生成，真实数据由 `adapters/holoocean`、
-`adapters/datasets` 转换），再由 `apps/replay_demo` 回放：声呐 CFAR 前端 +
-立体视觉前端产出证据 → 因子构建 → Gauss-Newton/LM 位姿图求解（可选 Ceres 后端）→
-回环闭合（可选）→ 轨迹/地图/评测指标。合成数据已端到端跑通并有确定性回放测试保护；
-一份真实 HoloOcean 双目录制和一份 EuRoC 公共数据集也已能进入离线 VO 管线（真实
-HoloOcean 数据的求解器尚未收敛到可作为基准的水平，见[已知边界](#已知边界)）。
+把传感器数据（相机/声呐/IMU/深度）录成统一的 MCAP bag（合成数据由
+`apps/synth_bag_gen` 生成，真实数据由 `adapters/holoocean` 从 HoloOcean 仿真器录制），
+再由 `apps/replay_demo` 回放：声呐 CFAR 前端 + 立体视觉前端 + IMU 预积分产出证据 →
+因子构建 → Gauss-Newton/LM 位姿图求解（可选 Ceres 后端）→ 回环闭合（可选）→
+轨迹/地图/评测指标。合成数据已端到端跑通并有确定性回放测试保护；一份真实 HoloOcean
+双目录制也已能进入离线 VO 管线（其求解器尚未收敛到可作为基准的水平，见
+[已知边界](#已知边界)）。
 
-**主线二：ROV 在线驾驶辅助（实时闭环，进行中）。** 面向 BlueROV2 Heavy + AI-D 双目
-+ SV1213 声呐的竞赛场景：HoloOcean 仿真把传感器流发布成 ROS2 话题 → C++
-`holoocean_realtime_node` 经有界优先级队列送入 `OnlineAssistPipeline` → 视觉/声呐
-目标检测融合成目标航迹 → 输出操作员辅助状态和 HMI 叠加图层 → 飞手脚本回注推进器
-命令，形成闭环。这条线的**代码**（Python 实时会话、C++ 实时节点、故障注入、任务评分、
-四档 gate）已经实现并有单元/冒烟测试，但**尚未在真实 HoloOcean/UE5 仿真器上跑过
-端到端闭环**——本仓库所在的 Linux 开发机没有安装 HoloOcean/UE5。
-
-两条主线共享同一套规范化消息模型（`schemas/proto/`）和同一个
-`PipelineInputPort` 事件入口：回放和实时不是两套代码，只是两种事件来源。
+> 历史：本仓库曾并行维护第二条主线（ROV 实时驾驶辅助/闭环，面向 BlueROV2 竞赛），
+> 已于 2026-09 整体剥离以聚焦声光融合 SLAM 本体；完整快照保存在
+> `archive/rov-realtime-line2` 分支。
 
 ### 一条铁律
 
 **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation,
 mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`。
-ROS2、HoloOcean、OpenCV、Ceres 等第三方头文件被隔离在 `adapters/` 各子目录里，
+HoloOcean、OpenCV、Ceres 等第三方头文件被隔离在 `adapters/` 各子目录里，
 算法核心（`include/`、`src/` 下按角色分区的生产代码）一行都不能 include 它们。
 `tools/lint/check_no_ros_in_core.sh` 在 CI 和本地验证里强制检查这条不变量。
 具体见[架构](#架构)一节。
@@ -76,13 +68,8 @@ ROS2、HoloOcean、OpenCV、Ceres 等第三方头文件被隔离在 `adapters/` 
 | 声光深度融合 | 声呐弧投影、跨模态关联、后验深度优化、局部点云/surfel 地图交接 | 已实现九场景矩阵；CTest 强制执行最低有效覆盖 gate，质量收益与延迟 gate 仍为 opt-in |
 | 状态估计 | Eigen 手写 Gauss-Newton/LM（默认）；Ceres 适配器（`estimation.solver: ceres_v1`，需 `-DUW_BUILD_CERES_SOLVER=ON`）作为基准候选项 | 已实现；求解器可切换但默认未换——切换默认值要等 `tools/bench/solver_benchmark.sh` 的实测数据 |
 | 地图与评测 | `SubmapManager`（点云子图）+ `SurfelMap`（置信度加权 surfel 融合、离群抑制、自由空间挖掘，nanoflann 空间索引适配器）；ATE、深度/融合和点云 Chamfer/completeness/outlier/F-score 指标 | ATE/深度/融合已用于现有验证；点云指标已有 API/单测但尚未接 Demo 或门禁；尚无 RPE |
-| 在线目标跟踪（ROV 辅助） | 视觉（HSV 目标检测，OpenCV 隔离在 `adapters/opencv`）与声呐目标检测**相互独立**运行，经关联器 + 跟踪器融合成 `TargetTrack` 航迹；稠密立体深度作为可选预算内补全；健康/降级状态机 | 已实现并有 20/10/50 Hz 实时冒烟（`apps/online_assist_smoke`）+ 降级路径测试；尚未接真实传感器 |
-| 实时事件入口 | `LiveEventSource`：四车道（localization/correction/mapping/evidence）有界优先级队列，每车道独立容量与溢出策略，deadline 感知 gate、队列延迟/健康统计 | 已实现并有混合速率/背压回归测试；供应商 SDK 直连的 EventSource 仍是后续工作 |
-| 实时闭环仿真与评分 | HoloOcean 实时会话（Python）、C++ ROS2 实时节点、确定性故障注入（丢帧/重复/乱序/中断/推进器降级）、脚本飞手、任务评分（precision/recall、bearing/range/横向偏移 P95、任务成功率/完成时间）、minimum/nominal/disturbed/overload 四档 gate | 代码已实现；除参数解析/契约逻辑外，真实 HoloOcean+rclpy 进程监督路径未在本机实测 |
 | 可复现实验 | 四层 YAML 配置、不可变 `RunManifest`、确定性 MCAP 回放 | Manifest 已写 git/config/标定 hash、平台、seed 和起止时间；完整数据/依赖 provenance 仍待补齐 |
 | 仿真接入 | HoloOcean Python 网关、统一 MCAP 格式录制、相机标定、版本化实时场景/任务 manifest（`adapters/holoocean/scenarios/`） | 已在原生 Windows HoloOcean 2.3.0 录制真实双目 bag 并离线回放；当前 Linux 开发机未重新运行仿真器 |
-| 公共数据集接入 | `adapters/datasets`：EuRoC MAV Dataset（MH_01_easy 已验证）ROS1 bag → 规范化 MCAP 转换器，含自研 rosbag1 容错读取器和去畸变预处理 | 已实现并跑通 EuRoC MH_01 的 VO 回放（无 GT，验证管线兼容性而非精度）；其他数据集未实现 |
-| ROS2 接入 | HoloOcean ImagingSonar 桥接节点 + `holoocean_realtime_node` 实时网关 | 均可编译、可独立启动；桥接节点未接真实仿真数据流，实时节点闭环见上 |
 
 主要技术栈：
 
@@ -92,13 +79,12 @@ ROS2、HoloOcean、OpenCV、Ceres 等第三方头文件被隔离在 `adapters/` 
 | 核心消息与接口 | Protobuf、`measurement_api` |
 | 录制与回放 | MCAP |
 | 仿真与数据集适配 | Python 3.10+、HoloOcean |
-| 中间件适配 | ROS2 Jazzy（可选构建 `-DUW_BUILD_ROS2=ON`） |
 | 候选求解器 | Ceres（可选构建 `-DUW_BUILD_CERES_SOLVER=ON`）、nanoflann（FetchContent，总是启用） |
 | 构建与验证 | CMake 3.22+、CTest、GoogleTest、pytest |
 
 ## 快速开始
 
-以下流程不需要 ROS2、HoloOcean 或 Unreal Engine。它会构建项目、运行 C++/Python
+以下流程不需要 HoloOcean 或 Unreal Engine。它会构建项目、运行 C++/Python
 测试、检查依赖规则、生成合成 MCAP，并运行回放 Demo。
 
 ### 1. 准备环境
@@ -172,7 +158,6 @@ cmake --build build -j"$(nproc)"
 
 | 开关 | 作用 | 前置条件 |
 |---|---|---|
-| `-DUW_BUILD_ROS2=ON` | 编译 `adapters/ros2` 的两个节点 | 已 source 的 ROS2 Jazzy + colcon 构建的 `holoocean_interfaces`（见 [ROS2 适配器文档](./adapters/ros2/README.md)） |
 | `-DUW_BUILD_CERES_SOLVER=ON` | 编译 `adapters/ceres` 的 `ceres_v1` 求解器适配器 | `CMAKE_PREFIX_PATH` 上有 Ceres（conda-forge 可装；依赖较重：SuiteSparse/glog/gflags） |
 | `-DUW_SANITIZER=address` / `thread` | ASan+UBSan / TSan 插桩 | TSan 有已知假阳性，见 [CLAUDE.md](./CLAUDE.md) 的记录 |
 | `-DUW_COVERAGE=ON` | gcov 覆盖率插桩 | 配合 `tools/run_quality_checks.sh coverage` |
@@ -187,10 +172,6 @@ cmake --build build -j"$(nproc)"
 | `optical_baseline_eval` | 光学基线评测：`StereoOpticalDepthFrontend` 对合成深度打分 |
 | `acoustic_optic_scenario_matrix` | 声光融合九场景矩阵（真实组件端到端接线，无 MCAP 往返） |
 | `bag_audit` | 规范化 bag 审计：topic 存在性、计数、时戳单调性、TF 链解析 |
-| `live_ingress_smoke` | 实时入口冒烟：混合速率事件注入 `LiveEventSource`，验证队列/延迟统计 |
-| `online_assist_smoke` | 在线辅助冒烟：真实立体/声呐前端 + `OnlineAssistPipeline` 实时跑目标跟踪 |
-| `holoocean_sonar_bridge_node` | ROS2：HoloOcean ImagingSonar 话题 → 规范化声呐帧（需 `UW_BUILD_ROS2`） |
-| `holoocean_realtime_node` | ROS2：实时闭环 C++ 网关（需 `UW_BUILD_ROS2`），见[下一节](#在线辅助与实时闭环rov) |
 
 ### 1. 默认合成场景（ground-truth+noise 桩）
 
@@ -264,23 +245,7 @@ ATE rmse≈0.4805 m（48/48 matched）；开启后找到 2 条回环边，ATE≈
 [配置说明](./configs/README.md) 的「回环闭合对比 demo」一节。回环闭合要求
 `estimator_mode: stereo_landmark_vo` 且 rig 带相机，默认关闭。
 
-### 5. 真实数据：HoloOcean 录制与 EuRoC 公共数据集
-
-```bash
-# EuRoC MH_01_easy（ROS1 bag → 规范化 MCAP，详见 adapters/datasets/README.md）：
-cd adapters/datasets
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python3 -m uw_dataset_adapter.euroc_converter \
-  --bag-url https://huggingface.co/datasets/kavehsgh/EuRoC_MAV_Dataset_Machine_Hall_Easy_01/resolve/main/MH_01_easy.bag \
-  --max-download-bytes 209715200 --max-keyframes 50 --out /tmp/euroc_mh01.mcap
-cd ../..
-
-build/bin/replay_demo --bag /tmp/euroc_mh01.mcap \
-  --experiment configs/experiment/euroc_mh01_vo.yaml --out /tmp/euroc_demo
-```
-
-EuRoC 实验不设 gate、不写 GT（转换器刻意不转换 GT/IMU）：它验证的是规范消息模型
-和 VO 路径不绑定 HoloOcean，不是轨迹精度。
+### 5. 真实数据：HoloOcean 录制
 
 `configs/experiment/real_holoocean_vo.yaml` 用于回放已有的真实 HoloOcean 双目录制
 （约 76 MB、50 个 keyframe，不含声呐/IMU/DVL）。2026-08-23 复核实测产出 46 条 VO
@@ -312,65 +277,12 @@ tools/bench/solver_benchmark.sh            # 打印对比表；不是 pass/fail 
 基准脚本跑 smoke（12 keyframe）/ stress（1000 keyframe）两档，可选加真实 bag；
 “默认求解器要不要换”是架构文档第 20 节明确记录的延后决策，要靠这份基准数据关闭。
 
-## 在线辅助与实时闭环（ROV）
-
-这条线面向 BlueROV2 Heavy + AI-D 双目 + SV1213 声呐的竞赛场景，规范性文档是
-`docs/specifications/` 下的三份规格（见[延伸阅读](#延伸阅读)）。系统闭环长这样：
-
-```mermaid
-flowchart LR
-    HO[HoloOcean / UE5] -->|传感器原始帧| SES[realtime_ros_session<br/>Python, rclpy]
-    SES -->|/holoocean/auv0/LeftCamera<br/>RightCamera, ImagingSonar<br/>VehicleState| GW[holoocean_realtime_node<br/>C++ ROS2 网关]
-    SES -->|/uw/sim/ground_truth| SC[task_scorer<br/>唯一允许消费真值的进程]
-    GW --> LES[LiveEventSource<br/>四车道有界优先级队列]
-    LES --> OAP[OnlineAssistPipeline<br/>视觉/声呐目标跟踪 + 融合]
-    OAP -->|/uw/hmi/status| SP[scripted_pilot<br/>脚本飞手]
-    OAP -->|/uw/hmi/overlay| HMI[操作员叠加图层]
-    SP -->|/uw/pilot/thrusters| SES
-    FI[fault_injector<br/>丢帧/重复/乱序/中断/推进器降级] -.-> SES
-```
-
-要点：
-
-- **话题契约**：算法侧只允许订阅四个输入话题（左右相机、声呐、车辆状态 odometry）；
-  `PilotCamera` 是独立的呈现通道，`/uw/sim/ground_truth` 只有评分器可以碰。话题名的
-  唯一定义处在 `uw_holoocean_adapter.ros_message_conversion.build_topic_map()`。
-- **车辆状态不是真值**：`VehicleState` odometry 由 `VehicleOrientation`+`IMUSensor`+
-  `DepthSensor` 组合而成，永远不用 ground-truth `PoseSensor`。
-- **降级语义**：视觉和声呐目标检测相互独立——声呐掉线不停视觉跟踪，反之亦然；稠密
-  立体深度是唯一走完整同步 bundle + 墙钟预算 gate 的路径，超预算/质量拒绝/失败统一
-  报 `dense_deadline_missed`。健康状态（HEALTHY/SUSPECT/UNAVAILABLE）和新旧度阈值
-  （`vehicle_state_stale_after_s` 等）在 `defaults/platform.yaml` 的 `online_assist:` 段。
-- **实时入口**：`LiveEventSource`（`include/runtime/live_event_source.hpp`）按
-  localization/correction/mapping/evidence 四车道分流，各车道独立容量与溢出策略
-  （`reject`/`drop_oldest`，配在 `defaults/platform.yaml` 的 `runtime.lanes:` 段），
-  提供 submit 状态、队列延迟分位数和容量违规统计。
-- **四档 gate**：`configs/experiment/rov_realtime_{minimum,nominal,disturbed,overload}.yaml`
-  定义四档 profile（注意它们是 Python `realtime_gate` 的 profile 文件，**不是** C++
-  `--experiment` 配置），预算为 result-age/state-age P95 350/150（minimum）、
-  250/100（nominal/disturbed）、500/200 ms（overload），外加 deadline-miss 率上限、
-  RSS 增长上限和 CPU/GPU 余量下限。运行入口（默认场景是
-  `adapters/holoocean/scenarios/blue_rov_aid_sv1213_base.json`，任务二选一）：
-
-```bash
-python -m uw_holoocean_adapter.realtime_gate \
-  --profile configs/experiment/rov_realtime_nominal.yaml \
-  --task adapters/holoocean/scenarios/aquaculture_search.yaml
-  # --gateway-binary 默认 build_ros2/bin/holoocean_realtime_node
-```
-
-**当前边界**：本机没有 HoloOcean/UE5 和 rclpy 环境，`RealtimeRosSession`/`main()`、
-`realtime_gate` 的真实进程监督路径写完但没有实测；能在本机跑的是 C++ 侧的两个冒烟
-（`live_ingress_smoke`、`online_assist_smoke`，有对应 CTest 集成测试）和 Python 侧的
-全部单元测试。需求的逐条追溯记录在 `docs/traceability/rov-realtime-closed-loop.csv`，
-由 `tools/lint/check_realtime_traceability.py` 校验（规格↔CSV 完整性本身是一个测试）。
-
 ## 架构
 
 ### 一张图看懂代码与框架
 
-下图把三件事画在一起：**① 分层架构与允许的依赖方向**（lint 强制，不是示意）、
-**② 主线一离线 SLAM 管线的数据流**、**③ 主线二 ROV 实时闭环的数据流**。
+下图把两件事画在一起：**① 分层架构与允许的依赖方向**（lint 强制，不是示意）、
+**② 离线 SLAM 管线的数据流**。
 本节后面的 Mermaid 图是它的分解视图，需要跳转到具体模块时再看。
 
 [![uw_slam 代码与框架逻辑图](./docs/architecture.png)](./docs/architecture.png)
@@ -383,9 +295,7 @@ python -m uw_holoocean_adapter.realtime_gate \
 ```mermaid
 flowchart LR
     SYN[合成场景<br/>synth_bag_gen] --> MCAP[统一 MCAP 录制格式]
-    HOP[HoloOcean Python 网关] --> MCAP
-    EUC[EuRoC 转换器<br/>adapters/datasets] --> MCAP
-    HOR[HoloOcean ROS2 话题] -. 传输层已验证<br/>下游尚未接通 .-> FE
+    HOP[HoloOcean Python 网关<br/>adapters/holoocean] --> MCAP
 
     PB[Protobuf 规范化消息模型] --- MCAP
     MCAP --> FE[声呐 CFAR 前端]
@@ -421,7 +331,7 @@ flowchart LR
 
 依赖只允许从左向右（`domain → core → {frontends, factor_builders, estimation,
 mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`）。`include/`、`src/` 下的生产
-代码不能包含 ROS2、HoloOcean 或第三方 vendor 头文件，也不能使用旧的手写 `uw/...`
+代码不能包含 HoloOcean 或第三方 vendor 头文件，也不能使用旧的手写 `uw/...`
 include 路径。OpenCV 4 是构建硬依赖，`opencv2/...` 头与 OpenCV 类型只允许出现在
 `adapters/opencv/`（lint 角色名 `opencv_adapters`）边界内；Ceres 只允许出现在
 `adapters/ceres/`；nanoflann 只允许出现在 `adapters/spatial_index/`。
@@ -435,9 +345,6 @@ C++ 与 Python 跨语言规范化消息模型的唯一来源。
   任意 plumb-bob 畸变、不同内参、非平行/非水平的一般离轴 stereo rig 的 rectify，
   产出 rectified images 和带新 `calibration_version` 的 derived
   `RigCalibrationSnapshot`，已接入 `apps/replay_demo`。
-- `OpenCvVisualAssistFrontend`（`adapters/opencv/include/adapters/opencv_visual_assist_frontend.hpp`：
-  HSV 目标检测 + 结构/路径偏移估计，实现 `measurement_api` 的纯接口）和
-  `OperatorOverlayRenderer`（无头 HMI 叠加渲染）：OpenCV 类型不穿透到接口之外。
 - `adapters/ceres` 的 `ceres_v1` 求解器与 `adapters/spatial_index` 的 nanoflann
   `SurfelSpatialIndex`：`estimation`/`mapping` 层只见纯虚接口，实现在 `adapters`
   层注入（`application` 负责把两边接到一起）。
@@ -457,10 +364,8 @@ observation 都进 `ReplayInputDiagnostics` 并使整个 run 以非零退出码�
 这套 `EventSource`/`PipelineInputPort` 接口与来源无关——`tests/integration/
 event_source_parity_test.cpp` 验证同一批事件经 MCAP 与内存两种 `EventSource`
 注入，应用侧观察到的顺序完全一致。**已完成**：规范事件契约（`CanonicalEvent`/
-`canonical_topics.hpp`）、MCAP `EventSource`、实时 `LiveEventSource`（四车道有界
-优先级队列 + deadline 感知 gate + 队列统计）、与来源无关的
-`PipelineInputPort`/`PumpEvents`、`replay_demo` 输入阶段的迁移、C++ 实时网关
-（`holoocean_realtime_node`）经同一入口驱动 `OnlineAssistPipeline`。
+`canonical_topics.hpp`）、MCAP `EventSource`、与来源无关的
+`PipelineInputPort`/`PumpEvents`、`replay_demo` 输入阶段的迁移。
 **尚未完成**：供应商 SDK 直连的 `EventSource` 实现、Start/Stop/Drain 完整生命
 周期、异步 recorder tap 的成品化。新代码不允许绕过 `PipelineInputPort` 直接用
 `ReadMcapMessages<T>`/vendor SDK 消息喂给算法层——`ReadMcapMessages<T>` 本身仍
@@ -501,14 +406,13 @@ event_source_parity_test.cpp` 验证同一批事件经 MCAP 与内存两种 `Eve
 | `apps/` | 可执行入口源码（见上文入口表）；可复用算法和用例编排分别位于对应层与 `application` 层 |
 | `tests/` | 消息格式与接口一致性（`contracts/`）、按层单元测试（`{core,frontends,factor_builders,estimation,mapping,runtime,evaluation,adapters}/`）、集成/确定性回放（`integration/`）、lint 自测（`lint/`）与工具测试（`tools/`） |
 | `cmake/` | 集中式 CMake：`Dependencies.cmake`、`Libraries.cmake`、`Applications.cmake`、`Tests.cmake` |
-| `adapters/holoocean/` | HoloOcean Python 网关（录制、实时会话、故障注入、评分、gate） |
-| `adapters/datasets/` | 公共数据集转换器（EuRoC） |
-| `adapters/ros2/` | ROS2 节点（声呐桥、实时网关） |
+| `adapters/holoocean/` | HoloOcean Python 网关（仿真录制 → 规范化 MCAP） |
+| `adapters/wit_imu/` | HWT9053-485 外挂 IMU 数据链（真实硬件） |
 | `adapters/opencv/`、`adapters/ceres/`、`adapters/spatial_index/` | OpenCV / Ceres / nanoflann 的边界隔离实现 |
 | `baselines/` | 外部基线（如 `sonar_camera_reconstruction`）运行脚本，不链接进本仓库构建 |
 | `configs/` | `defaults → rig → scenario → experiment` 分层配置 |
 | `tools/` | 环境安装、代码生成、lint、求解器基准（`bench/`）和完整验证脚本 |
-| `docs/` | 文档中心、架构/参考/路线图文档、`specifications/` 规范、`traceability/` 追溯矩阵、`archive/` 历史过程记录 |
+| `docs/` | 文档中心、架构/参考/路线图文档、`archive/` 历史过程记录 |
 | `external_repos/` | 只读参考/移植来源，不纳入本仓库版本控制 |
 
 ## 开发指南
@@ -542,11 +446,6 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests
 cd ../..
 
-# 公共数据集适配器（离线单测，不需要网络/下载数据）
-cd adapters/datasets
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest -q
-cd ..
 ```
 
 如果修改了 Protobuf schema，先重新生成 Python 绑定再跑 HoloOcean 侧测试（CI 也在
@@ -557,9 +456,6 @@ pytest 前重生成）。
 ```bash
 tools/lint/check_no_ros_in_core.sh
 ```
-
-ROV 实时闭环范围内还有一条需求追溯 lint（`tools/lint/check_realtime_traceability.py`），
-校验 `docs/traceability/rov-realtime-closed-loop.csv` 与三份规格文件的一致性。
 
 提交改动前，推荐直接运行完整验证：
 
@@ -630,7 +526,7 @@ flowchart TB
 
 | 层 | 描述内容 |
 |---|---|
-| `defaults/` | 平台级默认：求解器与迭代参数、warmup、reliability 信息上限、各前端参数、在线辅助预算/新旧度阈值、实时队列车道、回环闭合开关 |
+| `defaults/` | 平台级默认：求解器与迭代参数、warmup、reliability 信息上限、各前端参数、回环闭合开关 |
 | `rig/` | 具体载体的传感器内外参与噪声模型（解析进 `RigCalibrationSnapshot` protobuf） |
 | `scenario/` | world、控制、退化、故障和随机 seed——描述"跑什么数据" |
 | `experiment/` | 前端、估计器、可靠性策略、地图后端和算力预算——描述"怎么跑" |
@@ -651,39 +547,10 @@ flowchart TB
 
 ### HoloOcean Python 网关
 
-`adapters/holoocean/` 把 HoloOcean 观测写成与 C++ 回放一致的 MCAP/Protobuf 格式；
-实时会话额外提供 ROS2 话题发布、确定性随机化、故障注入、脚本飞手、任务评分和四档
-gate（见[在线辅助与实时闭环](#在线辅助与实时闭环rov)）。坐标变换、确定性随机化、
-时间语义、统一格式写入器和上述实时组件的可移植逻辑都有测试；需要真实
-HoloOcean/rclpy 的入口（`HoloOceanSession`、`RealtimeRosSession`/`main()`、
-`realtime_gate` 的进程监督运行）写完但未在本机实测。安装和代码生成步骤见
-[HoloOcean 适配器文档](./adapters/holoocean/README.md)。
-
-### 公共数据集
-
-`adapters/datasets` 目前支持 EuRoC MAV Dataset（机器厅序列，MH_01_easy 已验证）：
-ROS1 bag → 规范化 MCAP，含容错 rosbag1 读取器和逐帧去畸变（原始畸变帧在这种重复
-结构场景上产不出相对位姿因子，转换器文档记录了诊断）。GT 和 IMU 刻意不转换。详见
-[数据集适配器文档](./adapters/datasets/README.md)。
-
-### ROS2 Jazzy
-
-ROS2 默认不参与构建。启用 `-DUW_BUILD_ROS2=ON` 前，需要：
-
-- 已 source 的 ROS2 Jazzy 环境；
-- 在独立 colcon workspace 中构建
-  `external_repos/holoocean-ros/holoocean_interfaces`；
-- 将该 workspace 的安装目录加入 `CMAKE_PREFIX_PATH`。
-
-`holoocean_sonar_bridge_node` 和 `holoocean_realtime_node` 都已对真实 ROS2 Jazzy +
-`holoocean_interfaces` 完成编译、链接与独立启动验证；前者没有连接真实
-`holoocean_main`/UE5 数据流和下游管线，后者的闭环边界见
-[在线辅助与实时闭环](#在线辅助与实时闭环rov)。注意 conda 与系统 Python 的 PATH
-顺序在这两步要求相反（`colcon build` 要系统 Python 在前，`cmake -DUW_BUILD_ROS2`
-要 conda 的 cmake 4.x 在前），详见 [CLAUDE.md](./CLAUDE.md) 的记录。
-
-完整环境说明见 [ROS2 适配器文档](./adapters/ros2/README.md) 和
-[外部仓库说明](./external_repos/README.md)。
+`adapters/holoocean/` 把 HoloOcean 观测写成与 C++ 回放一致的 MCAP/Protobuf 格式。
+坐标变换、确定性随机化、时间语义、统一格式写入器都有测试；需要真实 HoloOcean 的
+入口（`HoloOceanSession`）写完但未在本机实测（本机没有 HoloOcean/UE5）。安装和
+代码生成步骤见 [HoloOcean 适配器文档](./adapters/holoocean/README.md)。
 
 ## 参与开发
 
@@ -726,14 +593,7 @@ target 按架构层合并，不要为单个实现新建 target 或 `CMakeLists.t
   但它不是 `map_backend` 的第二个可选值——配置层面还切换不了。
 - **位姿图只优化 keyframe，不联合优化路标**；声呐 elevation 初值不会被后续因子精化。
 - **reliability 多路信息上限目前只实现固定常数**，尚未实现完整的自适应策略。
-- **实时闭环未在真实仿真器上运行**：`RealtimeRosSession`、`realtime_gate` 的进程
-  监督路径、`holoocean_realtime_node` 对真实 HoloOcean 数据流的消费都没有实测；
-  本机能验证的是 C++ 侧冒烟 app 和 Python 单元测试。
-- **真实 HoloOcean bag 的 VO 尚未收敛**（ATE 4.32 m，根因见 Demo 一节）；
-  EuRoC 实验只验证管线兼容性，无 GT 无 gate。
-- **ROS2 声呐桥接节点未接真实数据流**：传输层可构建可启动，`SonarFrontend` 下游
-  尚未接通。SVIn 的非 ROS2 provider 有注入点单元测试；ROS2 wrapper 仍是文档骨架，
-  未编译。
+- **真实 HoloOcean bag 的 VO 尚未收敛**（ATE 4.32 m，根因见 Demo 一节）。
 - **`camera_rectifier` 是有限去畸变原语**（平行基线假设下逐目 plumb-bob 去畸变），
   未接入 `replay_demo`；`replay_demo` 现在用的是 `opencv_adapters` 的一般双目
   rectification，不依赖这个原语。在现有真实 bag 上直接启用旧原语会因重采样削弱
@@ -759,24 +619,20 @@ target 按架构层合并，不要为单个实现新建 target 或 `CMakeLists.t
 | 不确定应该先读哪份文档 | [文档中心](./docs/README.md) |
 | 作为新贡献者第一次读代码、理清调用链 | [新人上手指南](./docs/uw-slam-newcomer-guide.md) |
 | 逐阶段读懂离线 SLAM 管线（主线一）的机制与数学 | [离线 SLAM 管线深度走读](./docs/uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md) |
-| 逐阶段读懂 ROV 在线驾驶辅助（主线二）的实时闭环与降级语义 | [ROV 实时闭环深度走读](./docs/uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md) |
 | 不读代码，先弄懂这套系统在做什么 | [两条主线通俗讲解](./docs/两条主线通俗讲解-2026-08-28.md) |
 | 两条主线各自用了什么估计理论、为什么这么选 | [声光融合 SLAM 技术剖析](./docs/声光融合SLAM技术剖析-2026-08-28.md) |
 | 长期模块边界、状态机、可靠性和 Gate 设计 | [声光 SLAM 平台架构](./docs/acoustic-optic-slam-platform-architecture-2026-08-17.md) |
 | 当前代码里实际存在的类型、算法和数据流 | [代码库参考](./docs/uw-slam-codebase-reference-2026-08-18.md) |
 | 验证某个功能、该加载什么环境 | [测试与验证指南](./docs/testing-and-verification-guide-2026-08-20.md) |
 | ROV 竞赛牵引的一年期平台路线 | [ROV 平台落地路线图](./docs/ROV平台落地路线图.md) |
-| ROV 在线系统的需求/仿真/融合规格（规范性） | [docs/specifications/](./docs/specifications/) 三份规格 |
 | 合同平台参数与到货前准备工作 | [ROV 平台到货前准备工作规格](./docs/ROV平台到货前准备工作规格-2026-09-02.md) |
 | 某个设计当初为什么这么定（实施计划、代码审查、早期方案） | [docs/archive/](./docs/archive/) 历史过程记录 |
 | 配置字段与覆盖关系 | [配置说明](./configs/README.md) |
 | HoloOcean Python 入口 | [HoloOcean 适配器](./adapters/holoocean/README.md) |
-| 公共数据集转换 | [数据集适配器](./adapters/datasets/README.md) |
-| ROS2 构建与验证边界 | [ROS2 适配器](./adapters/ros2/README.md) |
 | 外部参考仓库的拉取与角色 | [外部仓库说明](./external_repos/README.md) |
 | 移植许可证与 provenance | [NOTICE](./NOTICE) |
 | 仓库开发约定与工程陷阱 | [CLAUDE.md](./CLAUDE.md) |
 
-> 提示：代码库参考（2026-08-18 版）最后核对于 2026-08-22；此后新增的实时闭环/在线
-> 辅助能力以本 README、两份深度走读、`docs/specifications/` 和源码为准。
-> `docs/archive/` 下的内容是历史过程记录，其中的数字与任务状态不代表现状。
+> 提示：代码库参考（2026-08-18 版）最后核对于 2026-08-22；此后变更以本 README、
+> 深度走读和源码为准。`docs/archive/` 下的内容是历史过程记录，其中的数字与任务
+> 状态不代表现状（包括主线二剥离前的实时闭环相关记录）。

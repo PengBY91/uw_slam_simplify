@@ -15,7 +15,6 @@ add_library(core STATIC
   src/sensor_models/camera_model.cpp
   src/sensor_models/camera_rectifier.cpp
   src/sensor_models/sonar_arc_projector.cpp
-  src/sensor_models/ned_conversion.cpp
   src/sensor_models/so3.cpp
   src/sensor_models/imu_preintegration.cpp
 )
@@ -31,8 +30,6 @@ target_link_libraries(measurement_api INTERFACE uw::core)
 
 add_library(opencv_adapters STATIC
   adapters/opencv/src/stereo_rectifier.cpp
-  adapters/opencv/src/opencv_visual_assist_frontend.cpp
-  adapters/opencv/src/operator_overlay_renderer.cpp
 )
 add_library(uw::opencv_adapters ALIAS opencv_adapters)
 target_include_directories(opencv_adapters PUBLIC
@@ -49,10 +46,6 @@ add_library(frontends STATIC
   src/frontends/cfar_detector.cpp
   src/frontends/dbscan.cpp
   src/frontends/sonar_cfar_frontend.cpp
-  src/frontends/sonar_target_extractor.cpp
-  src/frontends/target_associator.cpp
-  src/frontends/target_tracker.cpp
-  src/frontends/target_fusion_components.cpp
   src/frontends/block_matcher.cpp
   src/frontends/stereo_optical_depth_frontend.cpp
   src/frontends/harris_corner_detector.cpp
@@ -119,7 +112,6 @@ add_library(runtime STATIC
   src/runtime/synthetic_sonar.cpp
   src/runtime/mcap_event_source.cpp
   src/runtime/canonical_event_validation.cpp
-  src/runtime/live_event_source.cpp
   src/runtime/rolling_latency.cpp
 )
 add_library(uw::runtime ALIAS runtime)
@@ -140,17 +132,6 @@ add_library(uw::evaluation ALIAS evaluation)
 target_include_directories(evaluation PUBLIC "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(evaluation PUBLIC uw::core)
 uw_apply_library_defaults(evaluation)
-
-add_library(adapters STATIC
-  src/adapters/svin_bridge_local_odometry_provider.cpp
-  src/adapters/holoocean_ros_bridge_sonar_frame_provider.cpp
-  src/adapters/holoocean_live_conversion.cpp
-  src/adapters/sim_wall_clock_estimator.cpp
-)
-add_library(uw::adapters ALIAS adapters)
-target_include_directories(adapters PUBLIC "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(adapters PUBLIC uw::core)
-uw_apply_library_defaults(adapters)
 
 add_library(spatial_index_adapters STATIC
   adapters/spatial_index/src/nanoflann_surfel_index.cpp
@@ -178,11 +159,6 @@ add_library(application STATIC
   src/application/replay_pipeline.cpp
   src/application/event_pump.cpp
   src/application/replay_input_accumulator.cpp
-  src/application/online_assist_pipeline.cpp
-  src/application/latest_assist_sink.cpp
-  src/application/holoocean_status_json.cpp
-  src/application/runtime_metrics_collector.cpp
-  src/application/holoocean_realtime_sink.cpp
 )
 add_library(uw::application ALIAS application)
 target_include_directories(application PUBLIC "${PROJECT_SOURCE_DIR}/include")
@@ -201,15 +177,4 @@ if(UW_BUILD_CERES_SOLVER)
   # must fail loudly at startup, not silently fall back).
   target_compile_definitions(application PRIVATE UW_HAVE_CERES_SOLVER)
   target_link_libraries(application PRIVATE uw::adapters_ceres)
-endif()
-
-if(UW_BUILD_ROS2)
-  add_library(ros2_adapters INTERFACE)
-  add_library(uw::ros2_adapters ALIAS ros2_adapters)
-  target_include_directories(ros2_adapters INTERFACE adapters/ros2/include)
-  target_link_libraries(ros2_adapters INTERFACE
-    uw::adapters rclcpp::rclcpp
-    ${nav_msgs_TARGETS} ${sensor_msgs_TARGETS} ${std_msgs_TARGETS} ${rosgraph_msgs_TARGETS}
-    ${holoocean_interfaces_TARGETS}
-  )
 endif()

@@ -10,6 +10,11 @@ verified_worktree: "2026-08-22 P1 config validation and camera_rectifier changes
 
 # uw_slam 代码库参考文档
 
+> 2026-09-07 注记：本文最后核对于 2026-08-22，早于主线二（ROV 实时闭环/在线辅助）
+> 的整体剥离。文中关于 `adapters/ros2`、`OnlineAssistPipeline`、目标跟踪前端、
+> `LiveEventSource`、`target.proto` 等的描述对应的代码已不在 main 上（快照在
+> `archive/rov-realtime-line2` 分支）；主线一的描述仍然有效。逐项事实以源码为准。
+
 本文是 `uw_slam` 的代码级参考文档：基于 commit `8df083b` 及 2026-08-22 当前工作树
 逐层、逐目录、逐类型地记录实际存在的类型、函数、字段、参数和数据流。工作树中的
 P1 配置校验与 `camera_rectifier` 已用干净构建验证，但尚未提交，不能当作发布基线。
@@ -115,7 +120,7 @@ core → {algorithms, runtime, evaluation, adapters} → application → apps
 | runtime | `include/runtime`、`src/runtime` | `runtime` | `core`, `mcap_impl`, `protobuf`, `yaml-cpp`, Eigen3 | 状态机、四车道队列原语、分层配置加载、`RunManifest`、MCAP 读写封装 |
 | adapters/holoocean（Python，独立包） | `adapters/holoocean/` | Python `uw_holoocean_adapter` | protobuf, mcap, numpy | 直连 HoloOcean Python API |
 | adapters/ros2（可选，`UW_BUILD_ROS2`） | `adapters/ros2/include`、`adapters/ros2/src` | `ros2_adapters`（INTERFACE）+ `holoocean_sonar_bridge_node`（可执行） | ROS2 Jazzy, `holoocean_interfaces`, `adapters` | ROS2 话题 → `SonarFrame` 的传输层桥接 |
-| adapters（合并 svin_bridge + holoocean_ros_bridge 两个无 ROS provider） | `include/adapters`、`src/adapters`（文档：`adapters/svin_bridge.md`、`adapters/holoocean_ros_bridge.md`） | `adapters` | `core` | 两个具体 provider 实现（第三个 baseline 现在是独立执行边界，见 `baselines/`） |
+| adapters | （已随主线二剥离，见文首注记；`adapters` 库现为空目标之外的边界目录 `adapters/{opencv,ceres,spatial_index}`） | — | — | 历史：svin_bridge + holoocean_ros_bridge 两个无 ROS provider（快照在归档分支） |
 | evaluation | `include/evaluation`、`src/evaluation` | `evaluation` | `core` | ATE、深度、融合和点云地图指标（没有 RPE） |
 | application | `include/application`、`src/application` | `application` | 算法、runtime、evaluation | 跨层用例编排；当前包含离线回放管线 |
 | apps | `apps/synth_bag_gen.cpp`, `apps/replay_demo.cpp` 等 | 各自独立可执行文件 | `application` 或单一用途所需层 | 参数解析与进程入口 |
@@ -148,8 +153,6 @@ include/                     手写公共头文件，按角色分区（物理 uw
     mcap_io.hpp                MCAP 读写的 protobuf 封装
     acoustic_optic_synchronizer.hpp  纯函数：capture-time 声光配对/拒绝（声光 plan 3）
   evaluation/                trajectory_metrics / depth_metrics / fusion_metrics / map_metrics
-  adapters/                  svin_bridge_local_odometry_provider、
-                              holoocean_ros_bridge_sonar_frame_provider（均无 ROS2 依赖）
   application/               replay_pipeline 等跨层用例接口
 src/                         对应 include/ 分区的实现（.cpp），结构镜像 include/
 apps/
@@ -163,7 +166,6 @@ adapters/
   holoocean/                  Python 包 uw_holoocean_adapter，直连 HoloOcean，未随本次重构改动
   ros2/                       UW_BUILD_ROS2 开关保护的 ROS2 节点；include/adapters/、src/
                                （物理隔离边界，唯一允许出现 ROS2 头文件的地方）
-  svin_bridge.md               SVIn provider 说明文档（原 third_party/svin_bridge/README.md）
   holoocean_ros_bridge.md       HoloOcean ROS provider 说明文档（原 third_party/.../README.md）
   datasets/                    纯 stub，只有 README
 baselines/

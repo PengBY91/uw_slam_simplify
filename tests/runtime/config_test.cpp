@@ -101,19 +101,13 @@ TEST(Config, LoadsExperimentConfigWithAllThreeLayers) {
 }
 
 TEST(Config, LoadsEveryCheckedInRigUnderOnlineV1CardinalityContract) {
-  for (const std::string name : {"euroc_mh01.yaml", "example_auv.yaml",
+  for (const std::string name : {"example_auv.yaml",
                                  "example_auv_real_camera.yaml",
-                                 "example_auv_sonar_only.yaml",
-                                 "bluerov2_contract.yaml"}) {
+                                 "example_auv_sonar_only.yaml"}) {
     EXPECT_NO_THROW(uw::runtime::LoadRigConfig(
         std::string(UW_REPO_ROOT) + "/configs/rig/" + name))
         << "rig file: " << name;
   }
-
-  const auto euroc = uw::runtime::LoadRigConfig(
-      std::string(UW_REPO_ROOT) + "/configs/rig/euroc_mh01.yaml");
-  EXPECT_EQ(euroc.sonar_beam_models_size(), 0);
-  EXPECT_EQ(euroc.vehicle_state_sensors_size(), 0);
 
   const auto sonar_only = uw::runtime::LoadRigConfig(
       std::string(UW_REPO_ROOT) + "/configs/rig/example_auv_sonar_only.yaml");
@@ -147,85 +141,6 @@ TEST(Config, StereoRectificationDefaultsWhenSectionAbsent) {
   EXPECT_DOUBLE_EQ(config.stereo_rectification.alpha, 0.0);
   EXPECT_EQ(config.stereo_rectification.crop_policy, "full_canvas");
   EXPECT_EQ(config.stereo_rectification.frame_suffix, "_rectified");
-}
-
-TEST(Config, OnlineAssistDefaultsWhenSectionAbsent) {
-  const auto config = uw::runtime::PlatformDefaultsConfig{};
-  EXPECT_FALSE(config.online_assist.dense.enabled);
-  EXPECT_DOUBLE_EQ(config.online_assist.dense.budget_ms, 100.0);
-  EXPECT_DOUBLE_EQ(config.online_assist.vehicle_state_stale_after_s, 0.5);
-  EXPECT_DOUBLE_EQ(config.online_assist.modality_stale_after_s, 1.0);
-  EXPECT_DOUBLE_EQ(config.online_assist.min_publish_interval_s, 0.1);
-}
-
-TEST(Config, ParsesOnlineAssistOverrides) {
-  const auto tmp_path = std::filesystem::temp_directory_path() / "uw_config_test_online_assist.yaml";
-  {
-    std::ofstream out(tmp_path);
-    out << "online_assist:\n"
-           "  dense:\n"
-           "    enabled: true\n"
-           "    budget_ms: 75.0\n"
-           "  vehicle_state_stale_after_s: 0.25\n"
-           "  modality_stale_after_s: 2.0\n"
-           "  min_publish_interval_s: 0.05\n";
-  }
-  const auto config = uw::runtime::LoadPlatformDefaultsConfig(tmp_path.string());
-  EXPECT_TRUE(config.online_assist.dense.enabled);
-  EXPECT_DOUBLE_EQ(config.online_assist.dense.budget_ms, 75.0);
-  EXPECT_DOUBLE_EQ(config.online_assist.vehicle_state_stale_after_s, 0.25);
-  EXPECT_DOUBLE_EQ(config.online_assist.modality_stale_after_s, 2.0);
-  EXPECT_DOUBLE_EQ(config.online_assist.min_publish_interval_s, 0.05);
-  std::remove(tmp_path.string().c_str());
-}
-
-TEST(Config, RejectsNegativeMinPublishInterval) {
-  const auto tmp_path =
-      std::filesystem::temp_directory_path() / "uw_config_test_online_assist_publish_interval.yaml";
-  {
-    std::ofstream out(tmp_path);
-    out << "online_assist:\n"
-           "  min_publish_interval_s: -0.1\n";
-  }
-  EXPECT_THROW(uw::runtime::LoadPlatformDefaultsConfig(tmp_path.string()), std::runtime_error);
-  std::remove(tmp_path.string().c_str());
-}
-
-TEST(Config, RejectsNonPositiveOnlineAssistDenseBudget) {
-  const auto tmp_path =
-      std::filesystem::temp_directory_path() / "uw_config_test_online_assist_budget.yaml";
-  {
-    std::ofstream out(tmp_path);
-    out << "online_assist:\n"
-           "  dense:\n"
-           "    budget_ms: 0.0\n";
-  }
-  EXPECT_THROW(uw::runtime::LoadPlatformDefaultsConfig(tmp_path.string()), std::runtime_error);
-  std::remove(tmp_path.string().c_str());
-}
-
-TEST(Config, RejectsNonPositiveOnlineAssistVehicleStateStaleAfter) {
-  const auto tmp_path =
-      std::filesystem::temp_directory_path() / "uw_config_test_online_assist_stale.yaml";
-  {
-    std::ofstream out(tmp_path);
-    out << "online_assist:\n"
-           "  vehicle_state_stale_after_s: -1.0\n";
-  }
-  EXPECT_THROW(uw::runtime::LoadPlatformDefaultsConfig(tmp_path.string()), std::runtime_error);
-  std::remove(tmp_path.string().c_str());
-}
-
-TEST(Config, RejectsOnlineAssistUnknownKey) {
-  const auto tmp_path =
-      std::filesystem::temp_directory_path() / "uw_config_test_online_assist_unknown.yaml";
-  {
-    std::ofstream out(tmp_path);
-    out << "online_assist:\n"
-           "  bogus_key: 1.0\n";
-  }
-  EXPECT_THROW(uw::runtime::LoadPlatformDefaultsConfig(tmp_path.string()), std::runtime_error);
-  std::remove(tmp_path.string().c_str());
 }
 
 TEST(Config, ParsesTypedSonarCfarOverrides) {
@@ -825,31 +740,6 @@ TEST(Config, ValidateExperimentConfigSelectionsAcceptsCeresV1Solver) {
   uw::runtime::ExperimentConfig config;
   config.defaults.solver = "ceres_v1";
   EXPECT_EQ(uw::runtime::ValidateExperimentConfigSelections(config), std::nullopt);
-}
-
-TEST(Config, LoadsAssociationAndTrackerDefaultsUsedByFusion) {
-  const auto config = uw::runtime::LoadPlatformDefaultsConfig(
-      std::string(UW_REPO_ROOT) + "/configs/defaults/platform.yaml");
-  EXPECT_DOUBLE_EQ(config.target_association.max_corrected_time_delta_s, 0.05);
-  EXPECT_DOUBLE_EQ(config.target_association.max_bearing_mahalanobis_sq, 9.0);
-  EXPECT_DOUBLE_EQ(config.target_association.max_range_mahalanobis_sq, 9.0);
-  EXPECT_DOUBLE_EQ(config.target_tracker.stale_after_s, 0.5);
-  EXPECT_EQ(config.target_tracker.confirm_hits, 2);
-  EXPECT_EQ(config.target_tracker.degraded_misses, 3);
-}
-
-TEST(Config, RejectsUnsafeAssociationAndTrackerThresholds) {
-  const auto path = std::filesystem::temp_directory_path() / "uw_bad_target_fusion.yaml";
-  {
-    std::ofstream out(path);
-    out << "frontends:\n"
-           "  target_association:\n"
-           "    max_corrected_time_delta_s: .nan\n"
-           "  target_tracker:\n"
-           "    stale_after_s: 0.0\n";
-  }
-  EXPECT_THROW(uw::runtime::LoadPlatformDefaultsConfig(path.string()), std::runtime_error);
-  std::remove(path.string().c_str());
 }
 
 // estimation.solver at the experiment-file level (not nested under a

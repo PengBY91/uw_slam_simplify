@@ -11,6 +11,10 @@ implementation_reference: ./uw-slam-codebase-reference-2026-08-18.md
 
 # 水下声光融合 SLAM 平台长期架构设计
 
+> 2026-09-07 注记：主线二（ROV 实时闭环/在线辅助）已整体剥离，快照在
+> `archive/rov-realtime-line2` 分支。本文中涉及在线辅助/实时闭环/HMI 的章节按
+> 目标设计保留，不代表当前 main 的实现范围。
+
 > **文档权威范围**：本文定义平台应该演进到的目标状态、长期不变量和阶段决策，
 > 不代表所有模块已经实现。当前代码中实际存在的类型、算法、接线和验证结果以
 > [代码库参考](./uw-slam-codebase-reference-2026-08-18.md)为准。第 22 节是后续逐文件
@@ -268,9 +272,7 @@ uw_slam/
 │   └── failure_mining/
 ├── runtime/
 ├── adapters/
-│   ├── ros2/
 │   ├── holoocean/
-│   ├── datasets/
 │   └── third_party/
 ├── apps/
 ├── configs/

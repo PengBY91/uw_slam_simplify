@@ -16,7 +16,6 @@ add_executable(core_tests
   tests/core/camera_model_test.cpp
   tests/core/camera_rectifier_test.cpp
   tests/core/sonar_arc_projector_test.cpp
-  tests/core/ned_conversion_test.cpp
   tests/core/so3_test.cpp
   tests/core/imu_preintegration_test.cpp
 )
@@ -26,9 +25,6 @@ uw_register_gtest(core_tests "unit.core" "unit;core")
 add_executable(frontends_tests
   tests/frontends/cfar_detector_test.cpp
   tests/frontends/sonar_cfar_frontend_test.cpp
-  tests/frontends/sonar_target_extractor_test.cpp
-  tests/frontends/target_associator_test.cpp
-  tests/frontends/target_tracker_test.cpp
   tests/frontends/block_matcher_test.cpp
   tests/frontends/stereo_optical_depth_frontend_test.cpp
   tests/frontends/harris_corner_detector_test.cpp
@@ -95,7 +91,6 @@ add_executable(runtime_tests
   tests/runtime/canonical_event_test.cpp
   tests/runtime/canonical_event_validation_test.cpp
   tests/runtime/mcap_event_source_test.cpp
-  tests/runtime/live_event_source_test.cpp
   tests/runtime/rolling_latency_test.cpp
 )
 target_compile_definitions(runtime_tests PRIVATE UW_REPO_ROOT="${PROJECT_SOURCE_DIR}")
@@ -115,16 +110,10 @@ target_link_libraries(evaluation_tests PRIVATE uw::evaluation GTest::gtest GTest
 uw_register_gtest(evaluation_tests "unit.evaluation" "unit;evaluation")
 
 add_executable(adapters_tests
-  tests/adapters/svin_bridge_test.cpp
-  tests/adapters/holoocean_ros_bridge_sonar_frame_provider_test.cpp
-  tests/adapters/holoocean_live_conversion_test.cpp
-  tests/adapters/sim_wall_clock_estimator_test.cpp
   tests/adapters/opencv_stereo_rectifier_test.cpp
-  tests/adapters/opencv_visual_assist_frontend_test.cpp
-  tests/adapters/operator_overlay_renderer_test.cpp
 )
 target_link_libraries(adapters_tests PRIVATE
-  uw::adapters uw::opencv_adapters GTest::gtest GTest::gtest_main Threads::Threads
+  uw::opencv_adapters GTest::gtest GTest::gtest_main
 )
 uw_register_gtest(adapters_tests "unit.adapters" "unit;adapters")
 
@@ -138,13 +127,8 @@ uw_register_gtest(spatial_index_adapters_tests "unit.spatial_index_adapters" "un
 
 add_executable(application_tests
   tests/application/replay_pipeline_test.cpp
-  tests/application/target_fusion_binding_test.cpp
   tests/application/event_pump_test.cpp
   tests/application/replay_input_accumulator_test.cpp
-  tests/application/online_assist_pipeline_test.cpp
-  tests/application/holoocean_status_json_test.cpp
-  tests/application/latest_assist_sink_test.cpp
-  tests/application/runtime_metrics_collector_test.cpp
 )
 target_compile_definitions(application_tests PRIVATE UW_REPO_ROOT="${PROJECT_SOURCE_DIR}")
 target_link_libraries(application_tests PRIVATE
@@ -217,26 +201,6 @@ set_tests_properties(integration.acoustic_optic_scenario_matrix_config
   PROPERTIES LABELS "integration;replay")
 
 add_test(
-  NAME integration.live_ingress_smoke
-  COMMAND bash ${PROJECT_SOURCE_DIR}/tests/integration/live_ingress_smoke_test.sh
-          ${CMAKE_BINARY_DIR}/bin/live_ingress_smoke
-)
-set_tests_properties(integration.live_ingress_smoke PROPERTIES
-  LABELS "integration;runtime;live"
-  TIMEOUT 15
-)
-
-add_test(
-  NAME integration.online_assist_smoke
-  COMMAND bash ${PROJECT_SOURCE_DIR}/tests/integration/online_assist_smoke_test.sh
-          ${CMAKE_BINARY_DIR}/bin/online_assist_smoke
-)
-set_tests_properties(integration.online_assist_smoke PROPERTIES
-  LABELS "integration;application;live"
-  TIMEOUT 60
-)
-
-add_test(
   NAME lint.layer_dependency_unit
   COMMAND ${Python3_EXECUTABLE} tests/lint/check_layer_dependencies_test.py -v
 )
@@ -254,21 +218,3 @@ set_tests_properties(lint.layer_dependencies PROPERTIES
   LABELS "lint"
 )
 
-add_test(
-  NAME lint.realtime_traceability_unit
-  COMMAND ${Python3_EXECUTABLE} tests/tools/test_realtime_traceability.py -v
-)
-set_tests_properties(lint.realtime_traceability_unit PROPERTIES
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-  LABELS "lint"
-)
-
-add_test(
-  NAME lint.realtime_traceability
-  COMMAND ${Python3_EXECUTABLE} tools/lint/check_realtime_traceability.py
-          docs/traceability/rov-realtime-closed-loop.csv .
-)
-set_tests_properties(lint.realtime_traceability PROPERTIES
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-  LABELS "lint"
-)

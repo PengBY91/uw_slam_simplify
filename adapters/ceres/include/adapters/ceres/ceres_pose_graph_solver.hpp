@@ -4,7 +4,7 @@
 // (§5.1/§6.1), evaluated against uw::estimation::GaussNewtonSolver, the
 // hand-rolled v1 solver `include/estimation/gauss_newton_solver.hpp`
 // documents as a deliberate, deferred choice (platform architecture
-// section 20). Lives outside include/ and src/ (mirrors adapters/ros2's and
+// section 20). Lives outside include/ and src/ (mirrors
 // adapters/spatial_index's precedent) so Ceres headers never have to be
 // visible from `estimation` — only `application` (allowed to depend on
 // everything) and the benchmark tool construct this directly.

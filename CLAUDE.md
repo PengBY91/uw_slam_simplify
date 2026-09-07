@@ -11,16 +11,15 @@
 允许把后两者的具体实现移植进来（已经移植了两处，见下）。当前是"骨架 + 每层至少
 一条真实可跑的端到端链路"阶段，不是生产系统。
 
-仓库现在有两条并行主线，共用同一套 proto 消息模型和 `PipelineInputPort` 事件入口：
+仓库现在只有一条主线：
 
 1. **离线 SLAM 管线**（`synth_bag_gen`/`replay_demo`，成熟度最高）：声光前端 →
-   因子图（GN/LM 默认、Ceres 候选、可选回环闭合）→ 轨迹/地图/评测。
-2. **ROV 在线驾驶辅助**（实时闭环，进行中）：HoloOcean ROS2 话题 →
-   `holoocean_realtime_node` → `LiveEventSource`（四车道有界队列）→
-   `OnlineAssistPipeline`（视觉/声呐目标跟踪融合）→ HMI + 飞手命令回注。规范性
-   需求在 `docs/specifications/` 三份规格里，逐条追溯表在
-   `docs/traceability/rov-realtime-closed-loop.csv`；这条线的代码写完了但**没在真实
-   HoloOcean/UE5 上跑过**（本机没装仿真器），别把"有实现+有单测"当成"闭环验证过"。
+   因子图（GN/LM 默认、Ceres 候选、可选回环闭合）→ 轨迹/地图/评测。传感器数据
+   （相机/声呐/IMU/深度）来自合成生成或 `adapters/holoocean` 的 HoloOcean 仿真录制。
+
+> 历史注记：仓库曾有第二条主线（ROV 实时驾驶辅助/闭环），2026-09 整体剥离以聚焦
+> 声光融合 SLAM 本体；完整快照在 `archive/rov-realtime-line2` 分支，需要时从那里
+> 恢复。文中偶有提及主线二的旧记录（如 `docs/archive/`），读的时候注意区分。
 
 ## 硬性规则
 
@@ -30,20 +29,16 @@
   和 `holoocean_bridge/`——一个同事的 HoloOcean→ROS2 桥接包，供
   `sonar_camera_reconstruction_baseline`/`svin_bridge` 的 README 引用为参考）。
   它们是只读的参考/移植来源，各自有自己的来源，整个 `external_repos/` 已被
-  `.gitignore` 排除在本仓库版本控制之外。`holoocean-ros` 是当前实际在用的仿真
-  工具（HoloOcean + Unreal Engine 5，通过 ROS2 暴露话题），`include/adapters/
-  holoocean_ros_bridge_sonar_frame_provider.hpp` + `adapters/ros2/include/adapters/
-  ros2_holoocean_sonar_bridge.hpp` 是本仓库消费它的接入点——本机的 colcon
-  workspace（`~/ros2_ws`，symlink 进 `external_repos/holoocean-ros` 的三个包）
-  和 ROS2 Jazzy 装在系统 apt 里，都在这个仓库目录之外，不受 `.gitignore`/版本
-  控制影响。
+  `.gitignore` 排除在本仓库版本控制之外。（`holoocean-ros/`——HoloOcean 官方
+  ROS2 接口包——和 `holoocean_bridge/` 曾是主线二 ROS2 消费链的参考/接入来源，
+  主线二剥离后本仓库已不再消费它们，但目录仍在磁盘上，规则照旧不碰。）
 - **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation,
   mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`，
-  ROS2 隔离在 `adapters/ros2/`，OpenCV 隔离在 `adapters/opencv/`（lint 角色名
+  OpenCV 隔离在 `adapters/opencv/`（lint 角色名
   `opencv_adapters`，注意它的源码直接住在 `adapters/opencv/{include,src}` 而不是顶层
   `include/`/`src/`），Ceres 在 `adapters/ceres/`，nanoflann 在
   `adapters/spatial_index/`；`apps/` 只做参数解析和进程入口，用例编排放在
-  `application`。`include/`、`src/` 下任何生产代码都不能 include ROS/HoloOcean/
+  `application`。`include/`、`src/` 下任何生产代码都不能 include HoloOcean/
   OpenCV/Ceres/第三方 vendor 头，也不能再用旧的 `uw/...` 手写头路径——这是
   `tools/lint/check_layer_dependencies.py`（`tools/lint/check_no_ros_in_core.sh`
   是它的兼容入口）强制检查的不变量，改完代码顺手跑一下。`estimation`/`mapping`
@@ -78,16 +73,14 @@ cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure   # 用例数随代码变化，以实跑为准
 
 (cd adapters/holoocean && .venv/bin/pytest -q)  # 先按 adapters/holoocean/README.md 装 dev extra + 生成 schema_pb2
-(cd adapters/datasets && .venv/bin/pytest -q)   # EuRoC 转换器离线单测（碰了才需要跑）
 (cd adapters/wit_imu && .venv/bin/pytest -q)    # HWT9053-485 IMU 数据链离线单测（同上；先按其 README 建 venv + 生成 schema_pb2）
 
 tools/lint/check_no_ros_in_core.sh           # 依赖不变量检查（兼容入口，实际跑 tools/lint/check_layer_dependencies.py）
 ```
 
-可选构建开关：`-DUW_BUILD_ROS2=ON`（ROS2 节点）、`-DUW_BUILD_CERES_SOLVER=ON`
+可选构建开关：`-DUW_BUILD_CERES_SOLVER=ON`
 （Ceres 求解器适配器，依赖较重所以默认关）、`-DUW_SANITIZER=address|thread`、
-`-DUW_COVERAGE=ON`。ROV 实时闭环范围另有需求追溯检查
-`tools/lint/check_realtime_traceability.py`（碰了规格或 traceability CSV 才需要跑）。
+`-DUW_COVERAGE=ON`。
 
 改完代码后按这个顺序验证：编译 → C++ 测试 → Python 测试（如果碰了 `adapters/
 holoocean/`）→ lint。**端到端 demo 也值得实际跑一遍**，不要只信单元测试——下面
@@ -192,20 +185,7 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
   `$HTTP_PROXY`/`$HTTPS_PROXY` 生效。**`sudo` 默认会清空这两个变量**，所以
   `sudo rosdep init` 这类命令要用 `sudo -E`，否则代理配置对子进程不生效又卡住。
   不要在 `apt-get`/`rosdep` 卡住时傻等，先检查代理配置好了没有；`tools/setup_dev_env.sh`
-  给 C++ 依赖走的是切 conda-forge 的回退逻辑，但装 ROS2（apt-only，没有 conda 包）
-  就得走这条代理配置路径。
-- **装 ROS2 后跑 `colcon build`/`cmake -DUW_BUILD_ROS2=ON` 之前先 `conda deactivate`**：
-  base conda 环境默认自动激活，`$CONDA_PREFIX`/`$CONDA_PYTHON_EXE` 会让 CMake 的
-  `find_package(Python3)`（以及 `colcon build` 内部生成 `holoocean_interfaces` 消息代码
-  要用到的 `python3`）优先选中 conda 的 Python——但 `catkin_pkg`（ament_cmake 生成
-  package.xml 元数据要用）只装在系统 Python 里，选错 Python 会在配置/生成阶段报
-  `ModuleNotFoundError: No module named 'catkin_pkg'`。**并且**：`cmake`/`colcon` 这
-  两步对 Python 的要求是反的——`colcon build` 要系统 Python 在前（有 `catkin_pkg`），
-  而 `cmake -S . -B build -DUW_BUILD_ROS2=ON` 要用 conda 自己的 `cmake`（4.x）而不是
-  系统 apt 装的 `cmake`（3.28，`FindProtobuf.cmake` 里 `protobuf_generate()` 算生成
-  文件相对路径时有旧 bug，不认 `IMPORT_DIRS`，只认 `CMAKE_CURRENT_SOURCE_DIR`，会把
-  `.pb.h` 生成到多一层 `generated/schemas/proto/...` 的错误路径，导致 `domain_proto`
-  互相 include 找不到文件）——所以两步要分别调整 `PATH` 顺序，不能一套环境变量走到底。
+  给 C++ 依赖走的是切 conda-forge 的回退逻辑。
 - **`configs/experiment/*.yaml` 里 `rig`/`scenario`/`defaults` 路径是相对 `configs/`
   的**，不是相对 experiment 文件自己所在目录——第一次实现时按后者算漏了一层
   `parent_path()`，读文件报错才发现。
@@ -287,23 +267,16 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
   操作员辅助状态都在 `target.proto`）
 - 规范 topic 词表（离线 bag + 审计依据）：`include/runtime/canonical_topics.hpp`
 - Pose3、相机/去畸变与声呐 beam 模型：`include/sensor_models/`
-- Frontend/FactorBuilder/ResidualBlock/目标检测前端抽象：`include/measurement_api/`
-  （`frontend.hpp` + `target_frontend.hpp`）
+- Frontend/FactorBuilder/ResidualBlock 抽象：`include/measurement_api/frontend.hpp`
 - 分层配置加载：`include/runtime/config.hpp` + `src/runtime/config.cpp`
 - RunManifest：`include/runtime/run_manifest.hpp`
-- 实时事件入口：`include/runtime/live_event_source.hpp`（四车道有界队列）+
-  `include/runtime/event_source.hpp`（MCAP/内存/实时共用的 EventSource 契约）
-- 在线辅助编排：`include/application/online_assist_pipeline.hpp`；回放编排：
-  `include/application/replay_pipeline.hpp`
+- 事件源契约：`include/runtime/event_source.hpp`（MCAP/内存共用的 EventSource）
+- 回放编排：`include/application/replay_pipeline.hpp`
 - 回环闭合前端：`include/frontends/loop_closure_frontend.hpp`
-- 目标关联/跟踪：`include/frontends/{target_associator,target_tracker,target_fusion_components,
-  sonar_target_extractor}.hpp`
 - Ceres 求解器适配器：`adapters/ceres/`；nanoflann 空间索引：`adapters/spatial_index/`；
-  OpenCV 视觉辅助/HMI/双目 rectify：`adapters/opencv/`
-- HoloOcean 实时会话/故障注入/评分/gate：`adapters/holoocean/uw_holoocean_adapter/
-  {realtime_ros_session,fault_injector,task_scorer,realtime_gate,run_report}.py`；
-  实时场景/任务 manifest：`adapters/holoocean/scenarios/`
-- EuRoC 等公共数据集转换：`adapters/datasets/uw_dataset_adapter/`
+  OpenCV 双目 rectify：`adapters/opencv/`
+- HoloOcean 仿真录制（driver/conversions/canonical_writer/record_session）：
+  `adapters/holoocean/uw_holoocean_adapter/`
 - HWT9053-485 外挂 IMU 数据链（协议解析/均匀时间轴/Pi 侧 UDP 转发/BlueOS
   extension/配置脚本）：`adapters/wit_imu/`，规格里点名的入口在
   `tools/imu/wit_{configure,dump}.py`
@@ -312,10 +285,6 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
   `cmake/Libraries.cmake`、`cmake/Applications.cmake`、`cmake/Tests.cmake`
 - 移植代码出处总账：`/NOTICE`
 - lint 脚本：`tools/lint/check_no_ros_in_core.sh`（兼容入口）/
-  `tools/lint/check_layer_dependencies.py`（实际实现）；
-  ROV 需求追溯：`tools/lint/check_realtime_traceability.py`
-- ROV 在线系统三份规范：`docs/specifications/`；逐条追溯表：
-  `docs/traceability/rov-realtime-closed-loop.csv`
+  `tools/lint/check_layer_dependencies.py`（实际实现）
 - 确定性回放测试：`tests/integration/determinism_test.sh`
 - 声光场景矩阵 gate：`tests/integration/acoustic_optic_scenario_matrix_determinism_test.sh`
-- 实时冒烟（C++，不需要仿真器）：`tests/integration/{live_ingress,online_assist}_smoke_test.sh`

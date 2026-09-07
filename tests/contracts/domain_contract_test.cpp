@@ -87,54 +87,6 @@ TEST(DomainContract, RigCalibrationRoundTripsTimingProvenanceAndVehicleStateRole
   EXPECT_EQ(field->number(), 10);
 }
 
-TEST(DomainContract, TargetTrackPreservesSourcesAgeAndUncertainty) {
-  uw::domain::TargetTrack track;
-  track.mutable_track_id()->set_value("track_9");
-  track.set_class_label("aquaculture_zone");
-  track.set_bearing_rad(0.2);
-  track.set_range_m(4.0);
-  track.add_covariance_2x2_row_major(0.01);
-  track.add_covariance_2x2_row_major(0.0);
-  track.add_covariance_2x2_row_major(0.0);
-  track.add_covariance_2x2_row_major(0.04);
-  track.add_sources(uw::domain::ASSIST_SOURCE_VISUAL);
-  track.add_sources(uw::domain::ASSIST_SOURCE_SONAR);
-  track.add_source_observations()->set_value("cam_1");
-  track.add_source_observations()->set_value("sonar_1");
-  track.set_status(uw::domain::TARGET_TRACK_STATUS_CONFIRMED);
-
-  EXPECT_TRUE(track.has_range_m());
-  EXPECT_EQ(track.track_id().value(), "track_9");
-  EXPECT_EQ(track.sources_size(), 2);
-  EXPECT_EQ(track.source_observations_size(), 2);
-  EXPECT_EQ(track.covariance_2x2_row_major_size(), 4);
-  EXPECT_EQ(track.status(), uw::domain::TARGET_TRACK_STATUS_CONFIRMED);
-}
-
-TEST(DomainContract, TargetTrackRangePresenceKeepsLegacyTagFiveWireCompatibility) {
-  // Legacy proto3 scalar encoding for field 5 (fixed64 double 4.0). Changing
-  // that field to `optional double` must retain the same tag and wire type.
-  const std::string legacy_range_only(
-      "\x29\x00\x00\x00\x00\x00\x00\x10\x40", 9);
-  uw::domain::TargetTrack parsed_legacy;
-  ASSERT_TRUE(parsed_legacy.ParseFromString(legacy_range_only));
-  EXPECT_TRUE(parsed_legacy.has_range_m());
-  EXPECT_DOUBLE_EQ(parsed_legacy.range_m(), 4.0);
-
-  uw::domain::TargetTrack bearing_only;
-  std::string new_bytes;
-  ASSERT_TRUE(bearing_only.SerializeToString(&new_bytes));
-  uw::domain::TargetTrack parsed_bearing_only;
-  ASSERT_TRUE(parsed_bearing_only.ParseFromString(new_bytes));
-  EXPECT_FALSE(parsed_bearing_only.has_range_m());
-
-  const auto* range_field =
-      parsed_legacy.GetDescriptor()->FindFieldByName("range_m");
-  ASSERT_NE(range_field, nullptr);
-  EXPECT_EQ(range_field->number(), 5);
-  EXPECT_TRUE(range_field->has_presence());
-}
-
 TEST(DomainContract, SonarHealthMetricsRoundTripWithTypedSemantics) {
   uw::domain::HealthReport report;
   report.set_background_noise_mean(12.5);

@@ -1,15 +1,13 @@
 # `uw_slam` 代码逻辑与新人快速上手指南
 
-> 适用范围：当前工作树，2026-09-04 核对目录职责与共享地基一节；调用链细节最后逐行
-> 核对于 `8df083b`（2026-08-22），此后新增的实时闭环能力见
-> [ROV 实时闭环深度走读](./uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md)。
-> 本文覆盖两条主线共享的地基与入门调用链；每条主线的逐阶段机制、数学与设计原因见
-> [离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md)
-> 和上面那份实时闭环走读。
+> 适用范围：当前工作树，2026-09-07 起主线二（ROV 实时闭环）已整体剥离（快照在
+> `archive/rov-realtime-line2` 分支），本文只覆盖离线 SLAM 主线的地基与调用链；
+> 逐阶段机制、数学与设计原因见
+> [离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md)。
 
 ## 一句话概括
 
-`uw_slam` 是一个以 Protobuf 规范化消息模型为中心、算法与 ROS2/HoloOcean 解耦的水下声光
+`uw_slam` 是一个以 Protobuf 规范化消息模型为中心、算法与 HoloOcean 解耦的水下声光
 融合 SLAM 平台。目前处于“模块骨架 + 可运行端到端链路”阶段，还不是统一的实时产品系统。
 
 ## 整体逻辑结构
@@ -21,7 +19,7 @@ apps
        ↓
 application（用例编排）
        ↓
-runtime + evaluation + adapters（ROS2 隔离在 adapters/ros2/）
+runtime + evaluation + adapters
        + frontends + factor_builders + estimation + mapping
        ↓
 core (sensor_models + measurement_api)
@@ -34,7 +32,7 @@ schemas/proto
 从运行时数据流看：
 
 ```text
-仿真 / ROS2 / 合成数据
+仿真 / 合成数据
         ↓
 Observation 原始观测
         ↓
@@ -60,17 +58,17 @@ MeasurementEvidence / HypothesisSet
 | `include/factor_builders`、`src/factor_builders` | 相对位姿、深度、声呐距离残差 |
 | `include/estimation`、`src/estimation` | 位姿图和 Eigen 实现的 Gauss-Newton/LM |
 | `include/mapping`、`src/mapping` | 局部地图证据管理、融合深度到点云的转换 |
-| `include/runtime`、`src/runtime` | MCAP、配置、同步、队列、状态机、RunManifest 等 runtime 支持原语；`live_event_source.hpp` 提供在线四车道有界队列入口 |
-| `include/adapters`、`src/adapters`、`adapters/ros2` | HoloOcean、ROS2、SVIn 等外部系统边界 |
+| `include/runtime`、`src/runtime` | MCAP、配置、同步、RunManifest 等 runtime 支持原语 |
+| `adapters/` 各子目录 | HoloOcean（Python 录制）、OpenCV、Ceres、nanoflann、wit_imu 等外部系统边界 |
 | `include/evaluation`、`src/evaluation` | ATE、深度/融合和点云地图质量指标（尚无 RPE） |
-| `include/application`、`src/application` | 跨算法、runtime 与评测层的用例编排；当前包含离线回放管线（`replay_pipeline`）与在线辅助管线（`online_assist_pipeline`） |
+| `include/application`、`src/application` | 跨算法、runtime 与评测层的用例编排；当前即离线回放管线（`replay_pipeline`） |
 | `apps` | 参数解析和进程入口；调用 `application` 服务或单一用途的共享原语 |
 | `tests` | 消息格式与接口一致性测试（`contracts/`）、按层单元测试、确定性回放（`integration/`） |
 | `external_repos` | 只读参考代码，不是本系统运行主体 |
 
-最重要的设计规则是：算法层不能知道 ROS2、HoloOcean 或 vendor 类型；外部数据进入
+最重要的设计规则是：算法层不能知道 HoloOcean 或 vendor 类型；外部数据进入
 算法层前，必须先转换成 Protobuf 规范化消息类型。第三方依赖各自隔离在一个 adapter 里
-——ROS2 在 `adapters/ros2/`、OpenCV 在 `adapters/opencv/`、Ceres 在 `adapters/ceres/`、
+——OpenCV 在 `adapters/opencv/`、Ceres 在 `adapters/ceres/`、
 nanoflann 在 `adapters/spatial_index/`；`estimation`/`mapping` 只看得到纯虚接口
 （`Solver`、`SurfelSpatialIndex`），具体实现由 `application` 注入。这条不变量由
 `tools/lint/check_no_ros_in_core.sh`（实际实现 `tools/lint/check_layer_dependencies.py`）
@@ -125,7 +123,6 @@ C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 P
 | `state.proto` | `StateSnapshot`（估计状态）、`VehicleState`（车辆状态输入） |
 | `map.proto` | `MapEvidence`（局部点云/surfel 载荷，`representation_type` + `reintegration_policy`） |
 | `health.proto` | `HealthReport`（HEALTHY/SUSPECT/UNAVAILABLE/RECOVERING + reason_code） |
-| `target.proto` | `TargetDetection` / `TargetTrack` / `TargetTrackSet` / `OperatorAssistState`（主线二输出契约） |
 | `calibration.proto` | `RigCalibrationSnapshot`（rig 配置层的解析目标） |
 | `ids.proto`/`time.proto`/`vehicle.proto`/`imu.proto`/`dvl.proto` | 标识、时间戳、`ImuSample`、`DvlSample` |
 
@@ -294,7 +291,7 @@ HoloOcean 2.3.0 上生成过统一 MCAP 录制格式。`configs/experiment/real_
 
 审计样本约 76 MB、50 个 keyframe，不含声呐/IMU/DVL；对齐 ATE RMSE 为
 `0.5596 m`，求解器 30 次迭代后 `stalled`，稠密地图为空。因此它证明了“真实录制能
-进入离线 VO”，没有证明实时闭环、真实声光融合或生产精度。
+进入离线 VO”，没有证明真实声光融合已达到生产精度。
 
 ## 配置、适配器与外部系统
 
@@ -321,11 +318,6 @@ defaults → rig → scenario → experiment → 显式 CLI 参数
   `synth_bag_gen` 的真实会话对应物，把一次真实 HoloOcean 录制转换成同样的
   统一 MCAP 录制格式。项目已在原生 Windows 仿真器上录制并离线回放过一份双目 bag；当前
   Linux 开发机没有 HoloOcean/UE5，实时可靠性仍未自动回归。
-- `adapters/ros2`：ROS2 传输边界，是唯一允许出现 ROS2 头文件的地方。当前 HoloOcean
-  声呐节点能够订阅并转换消息，但尚未驱动完整声呐前端和估计链。
-- `include/adapters`、`src/adapters`（文档见 `adapters/svin_bridge.md`、
-  `adapters/holoocean_ros_bridge.md`）：把 SVIn、HoloOcean ROS bridge 等外部语义
-  转换成平台 Provider，与 ROS2 传输层解耦，可在无 ROS2 环境下单测。
 - `external_repos`：只读参考和移植来源，不应直接修改。
 
 ## 新人 60–90 分钟上手路径
@@ -423,7 +415,7 @@ scenario_matrix/main.cpp
 | 修改地图指标 | `include/evaluation/map_metrics.hpp`、`src/evaluation/map_metrics.cpp` | `unit.evaluation.MapMetrics.*`；当前只适合小点集 |
 | 修改配置或回放 | `include/runtime`、`src/runtime`、`include/application`、`src/application`、`apps` | `unit.runtime.Config.*`、`unit.application.*`、`integration.*`；未知选择必须启动失败 |
 | 修改 RunManifest provenance | `include/runtime/run_manifest.hpp`、`src/application/replay_pipeline.cpp` | 端到端检查 `<out>_run_manifest.json` |
-| 接入真实设备 | `include/adapters`、`src/adapters`、`adapters/ros2` | `unit.adapters.*`，加端到端实机验证 |
+| 接入真实设备 | `adapters/` 对应子目录 | 对应适配器单测，加端到端实机验证 |
 
 ## 当前容易误解的边界
 
@@ -431,7 +423,6 @@ scenario_matrix/main.cpp
   `map_backend` 说明也不代表已有动态插件或第二后端。
 - 位姿图只优化 keyframe 位姿，不联合优化地标。
 - 声呐消费者主要使用每帧 top-1 候选。
-- ROS2 HoloOcean 节点目前只完成传输和格式转换，尚未驱动完整算法链。
 - `McapEventSource`/`PipelineInputPort`/`PumpEvents`（`include/runtime/event_source.hpp`、
   `include/application/pipeline_input_port.hpp`）统一了 MCAP 回放的输入读取方式，
   并且这套接口本身与来源无关；但这只是"输入主链"这一层——供应商 SDK 的

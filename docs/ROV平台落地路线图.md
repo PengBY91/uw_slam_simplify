@@ -36,7 +36,7 @@
 
 ### 2.2 已经设计但尚未打通的关键缺口
 
-- **`BoundedQueue`/`Lane` 四车道有界队列原语已经实现**（`kLocalization`/`kCorrection`/`kMapping`/`kEvidence`，配套 `configs/defaults/platform.yaml` 的 `runtime.lanes`），**但没有真正的调度器把它们串起来**——这正是本文档第 3 节"有界在线运行时"这个方框在代码里的落点。S1 阶段要交付的是把已有原语接上调度循环，不是从零设计队列模型。（2026-09-02 更新：`LiveEventSource` + `OnlineAssistPipeline` 已实现，并于 2026-08-27 在 Windows HoloOcean 上实跑 14 分钟；**未在真机上验证**。）
+- **在线实时运行时**（四车道有界队列 + 在线辅助管线）曾在主线二下实现并在 Windows HoloOcean 上实跑过 14 分钟，但 2026-09 主线二整体剥离后已不在 main 上；快照在 `archive/rov-realtime-line2` 分支。S1 阶段若要恢复在线运行时，从该分支捡回起点比从零设计快。
 - **`apps/replay_demo` 的执行体 `RunReplayPipeline()`（`src/application/replay_pipeline.cpp`，1051 行）是严格的多遍批处理**：按 topic 对同一个 MCAP 文件重复调用 `ReadMcapMessages<T>`（现存代码里至少 10 处独立调用），关键帧身份靠固定 `kKeyframeIntervalS = 0.2` 常量反推（第 339、421 行），全部关键帧处理完才调用一次 `GaussNewtonSolver::Solve()`。这不是"把读 bag 换成读实时 topic"就能解决的，需要把"多遍扫描 + 单次求解"的批处理控制流改造成"单次有序读取 + 增量身份关联"的结构。好消息：frontend/factor_builder/solver 这些数学核心可以原样复用，工作量集中在一个新的输入/编排层。**这项工作已经有具体实施计划**：`docs/archive/superpowers/plans/2026-08-24-live-replay-unified-ingress.md`，TDD 任务分解到文件级别，预计 2–3 周，是 S1 阶段的第一个软件实施包。（2026-09-02 更新：该计划已完成并归档至 `docs/archive/superpowers/plans/`，`replay_pipeline.cpp` 已改为单遍 `MCAP EventSource` 读取，与 live 共用 `event_source.hpp` 契约。）
 - **ROS2 adapter 目前只有 HoloOcean 声呐桥接节点是真实代码**（编译通过、从未接过真实仿真数据流），SVIn 桥接节点整个类体注释掉、从未编译。面向真实硬件的 adapter 代码一行都没有，需要新写——但这正是 `providers.hpp` 接口存在的意义，是新增工作，不是重新设计接口。（2026-09-02 更新：HoloOcean 实时网关已接真实仿真数据流；真机 adapter 清单改为 **MAVLink adapter（BlueROV2/ArduSub 遥测、命令、外部导航回灌，准备规格 PREP-C-03）排在最前**，因为 ArduSub SITL 让它不等到货就能开发和验证；其后是声呐 SDK 接收端（PREP-B-04）、HWT9053 IMU 数据链（PREP-D-02/D-03）、相机流接收（PREP-E-04）。AI-D 相机 adapter 已不在方案内。）
 - **`HealthReport`/`HealthStatus` protobuf 已定义，但全仓库零生产者/消费者**——本文档第 8 节要求的"健康/延迟/丢帧可观测"，需要真正把这条数据通路点亮，不是新发明格式。（2026-09-02 更新：声呐 CFAR、双目深度、回环前端和 HoloOcean 状态 JSON 已产出 `HealthReport`；真机侧的生产者——MAVLink 外部导航、IMU 转发服务——随对应 adapter 新增。）
@@ -139,7 +139,7 @@ MCAP replay 从规范消息位置重新注入，因此 live 和 replay 共用其
 | 时间 | 团队软件工作 | 供应商与联合工作 | 放行结果 |
 |---|---|---|---|
 | 第1周 | 冻结最小 live 消息、进程边界和 SDK 验收项；~~拍板相机方案（A/B）~~（已由合同定为单目 IMX462）；**起 ArduSub SITL，启动 MAVLink adapter 与设定值命令契约（PREP-C-01/C-02/C-03）** | 锁定整机技术状态、交付环境和联调日程；**明确电源适配/EMC集成责任归属**；发出 PREP-F-02 厂家问题清单 | SDK、文档、样例和整机路径明确 |
-| 第2–3周 | 真实样例进入规范消息、MCAP 和基础 HMI（统一输入主链已完成，直接在 `LiveEventSource` 上接入）；准备规格 PREP-A-03 合同机器数字孪生、PREP-B-01 IMU 预积分启动 | 供应商解释数据格式、时间戳、坐标与配置；声呐厂家答复 PREP-F-02 问题清单 | 相机、声呐样例可记录、显示和回放 |
+| 第2–3周 | 真实样例进入规范消息、MCAP 和基础 HMI（统一输入主链已完成，经 `EventSource` 契约接入）；准备规格 PREP-A-03 合同机器数字孪生、PREP-B-01 IMU 预积分启动 | 供应商解释数据格式、时间戳、坐标与配置；声呐厂家答复 PREP-F-02 问题清单 | 相机、声呐样例可记录、显示和回放 |
 | 第4–5周 | MAVLink adapter（PREP-C-03，已在 SITL 上先行）接真机；声呐 SDK 接收端（PREP-B-04）按厂家答复定型；设备伪装层（PREP-A-13）让四个 adapter 在到货前已跑过——**SDK/adapter 仍是关键路径，原计划配2人，现只有1人全职+实习生打下手，是整段时间轴延长的主因** | 实际设备干式上电、通信和网络联调 | 台架数据持续进入团队软件 |
 | 第6周 | 接入 `SonarCfarFrontend`（已真实、已测试，不依赖尚未落地的相机方案）并发布最小状态；SDK adapter 开发 | 完成整机基础显控、外参资料和接口核对 | `真实传感器→算法→HMI→录制` 干式闭环 |
 | 第7周 | 修复同步、帧率、编码和恢复问题；验证回放一致性 | 整机功能、保护、配平和下水前检查 | 具备下水条件 |

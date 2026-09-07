@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "uw/domain/calibration.pb.h"
-#include "uw/domain/command.pb.h"
 #include "uw/domain/dvl.pb.h"
 #include "uw/domain/factor.pb.h"
 #include "uw/domain/health.pb.h"
@@ -29,7 +28,6 @@
 #include "uw/domain/observation.pb.h"
 #include "uw/domain/sonar.pb.h"
 #include "uw/domain/state.pb.h"
-#include "uw/domain/target.pb.h"
 #include "uw/domain/time.pb.h"
 #include "uw/domain/vehicle.pb.h"
 

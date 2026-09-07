@@ -12,20 +12,11 @@
 `--out-dir` 下：
 
 ```bash
-tools/verify_pipeline.sh --out-dir /tmp/uw_slam_verify/check --with-ros2
+tools/verify_pipeline.sh --out-dir /tmp/uw_slam_verify/check
 cat /tmp/uw_slam_verify/check/summary.txt
 ```
 
-不加 `--with-ros2` 时脚本只跑不需要真实仿真器/ROS2 的部分（第 1~6 步）；`~/ros2_ws`
-或 `/opt/ros/jazzy/setup.bash` 不存在时，即使加了 `--with-ros2` 也会自动跳过第
-7/8 步而不报错。脚本本身会探测 `uw_slam_build` conda env 并加入 `PATH`，不需要手动
-`export`。
-
-历史记录：2026-08-20 在本机（commit `90b7752`）实测过完整 8 步（含 `--with-ros2`），全部
-PASS：编译 → 23 项 ctest → 11 项 pytest → lint → `synth_bag_gen` → `replay_demo`
-（ATE rmse ≈0.213m）→ ROS2 桥 configure → ROS2 桥 build。
-
-当前复核：不带 ROS2 的 1～6 步全部 PASS；最新工作树 CTest `136/136`、Python
+当前复核：1～6 步全部 PASS（历史数字，以实跑为准）；最新 CTest/Python
 `35/35`，默认
 合成回放 ATE RMSE `0.0665821 m`，并生成 trajectory、manifest 与 synthetic MCAP。
 旧记录保留用于追溯，不应再作为当前测试数量或数值基线。
@@ -36,7 +27,7 @@ PASS：编译 → 23 项 ctest → 11 项 pytest → lint → `synth_bag_gen` �
 ```mermaid
 flowchart TB
     B["cmake --build build"] --> T1["ctest 全量 C++ 测试"]
-    T1 --> T2["Python 适配器测试<br/>adapters/{holoocean,datasets,wit_imu}"]
+    T1 --> T2["Python 适配器测试<br/>adapters/{holoocean,wit_imu}"]
     T2 --> T3["tools/lint/check_layer_dependencies.py<br/>依赖方向不变量"]
     T3 --> T4["实跑端到端 demo<br/>synth_bag_gen → replay_demo"]
     T4 --> W["⚠️ 只有这一步抓到过的坑：<br/>z 轴 anchor（ATE 4.6 m）<br/>camera↔body 共轭方向反了（ATE 6.67 m）<br/>cost_change_tolerance 比浮点噪声还紧（假 stalled）"]
@@ -44,7 +35,6 @@ flowchart TB
     T3 --> Q["tools/run_quality_checks.sh<br/>sanitizer(ASan+UBSan) / coverage / static-analysis"]
     Q --> QN["TSan 不在 CI：预编译 protobuf/gtest 未插桩 → 已知假阳性"]
 
-    T4 -.-> S1["live_ingress_smoke / online_assist_smoke<br/>不需要仿真器，本机可跑"]
     S1 -.-> S2["⛔ 到此为止：四档实时 gate、<br/>RealtimeRosSession 真实进程监督路径<br/>需要 HoloOcean/UE5/rclpy，本机没有"]
     style S2 fill:#ffe1e1,stroke:#c0392b,stroke-dasharray: 4 3
     style W fill:#fff4d6,stroke:#c9871f
@@ -72,139 +62,11 @@ flowchart TB
 | 声光融合场景矩阵（plan 5） | `build/bin/acoustic_optic_scenario_matrix --experiment configs/experiment/synthetic_smoke.yaml --seed 4242 --trials-per-scenario 8` | 同上 | 退出码必须为 0；四个 fail-closed/消融场景预期 0 accepted，其余五个场景必须非零；固定 seed 双跑除墙钟延迟外一致 |
 | 确定性回放（集成测试） | 已含在 ctest 里：`integration.replay_determinism`、`integration.optical_baseline_smoke`、`integration.acoustic_optic_scenario_matrix_determinism`（`ctest --test-dir build -L integration`）；也可单独 `bash tests/integration/<name>.sh <对应二进制路径...>` | 同上 | 同 seed 两次运行输出逐字节一致（scenario matrix 一项排除 `p95_latency_ms`，因为它是真实墙钟耗时，本来就不该要求确定性） |
 | HoloOcean Python 网关（坐标变换 / 相机与状态转换 / MCAP writer / 场景随机化 / `record_session.py` 录制拼装逻辑，不含真实仿真器调用） | `(cd adapters/holoocean && .venv/bin/pytest -q)`（首次需要 `.venv/bin/pip install -e ".[dev]"`，见 [HoloOcean 适配器 README](../adapters/holoocean/README.md)） | `adapters/holoocean/.venv`，**不能**用 conda env 里的 `pytest`——会解析到 base conda 环境，既缺 `uw_holoocean_adapter` 包，又会因为 protobuf gencode/runtime 版本不一致直接报 `VersionError` | 35/35 通过 |
-| ROS2 桥接节点（传输层） | 编译：`cmake -S . -B build_ros2 -DCMAKE_PREFIX_PATH="$HOME/miniconda3/envs/uw_slam_build" -DUW_BUILD_ROS2=ON && cmake --build build_ros2 --target holoocean_sonar_bridge_node`；独立启动：`source /opt/ros/jazzy/setup.bash && source ~/ros2_ws/install/setup.bash && ./build_ros2/bin/holoocean_sonar_bridge_node` | `uw_slam_build` env + 已 source 的 ROS2 Jazzy + 已 colcon build 好 `holoocean_interfaces` 的 `~/ros2_ws` | 编译链接成功；节点启动后常驻不退出/不崩溃即算正常——它是纯传输层，没有真实 `holoocean_main` 喂话题、也没接 `SonarFrontend`，安静地空转就是预期行为，见 [ROS2 适配器 README](../adapters/ros2/README.md) |
 | Protobuf schema 改动后重新生成 Python 绑定 | `tools/codegen/gen_py.sh` | `adapters/holoocean/.venv` | 生成/更新 `schema_pb2/`；跑完之后 pytest 应仍然全过 |
 | 依赖方向不变量（`include`/`src` 生产代码不许 include ROS/HoloOcean，也不许用旧 `uw/...` 手写头路径） | `tools/lint/check_no_ros_in_core.sh`（等价于 `tools/lint/check_layer_dependencies.py .`） | 无特殊环境 | 打印 `OK: ...` |
 | ASan+UBSan | `tools/run_quality_checks.sh sanitizer` | conda C++ 工具链；独立使用 `build_asan/` | 全量 CTest 通过且无 sanitizer 报告 |
 | Coverage 报告 | `tools/run_quality_checks.sh coverage` | gcc/gcov；独立使用 `build_cov/` | CTest 通过并打印仓库源码行覆盖摘要；当前不设覆盖率门槛 |
 | 静态分析 | `tools/run_quality_checks.sh static-analysis` | 可选 `cppcheck` | 输出 warning/performance/portability 发现；当前只报告、不作为失败 gate |
-
-### Live ingress 混合速率稳定性 gate
-
-普通 CI/CTest 只运行 3 秒 profile，验证双目 20 Hz、声呐 10 Hz、载体状态 50 Hz 经
-`LiveEventSource → PumpEvents → PipelineInputPort` 的真实线程与有界队列路径：
-
-```bash
-ctest --test-dir build -R integration.live_ingress_smoke --output-on-failure
-```
-
-30 分钟 profile 是由主控在审查通过后执行的人工稳定性 gate，不属于普通 CTest，也不要在
-日常回归里自动触发：
-
-```bash
-/usr/bin/time -v build/bin/live_ingress_smoke \
-  --duration-s 1800 --camera-hz 20 --sonar-hz 10 --state-hz 50
-```
-
-`/usr/bin/time -v` 的 `Maximum resident set size` 是外部 RSS 采样证据；也可另开终端用
-`ps -o pid,rss,etime,cmd -p <pid>` 周期采样。短档与长档都要求进程退出码为 0，最后一行
-至少包含连续字段 `reference_delivered=0 semantic_rejected=1
-queue_capacity_violations=0 flush_count=1`；同时必须看到 `reference_rejected=1`、
-`rate_count_violations=0 deadline_misses=0`，四个目标流（左相机、右相机、声呐、载体
-状态）的 `*_expected` 与 `*_actual` 分别相等，且 submitted 与 delivered 相等。每个
-`*_max_lateness_ns` 是该流相对计划 deadline 的最大迟到时间。
-
-调度器不会在落后时 burst catch-up：落后至少一个 period 时跳过所有完整过期 tick，
-每个流在每轮循环最多提交当前一帧。`deadline_misses` 是跳过的 per-stream tick 总数
-（双目左右分别计数），任何 miss 或 expected/actual 不一致都会使 gate 非零退出。CTest
-脚本用 `--inject-stall-ms`（默认 0，仅用于自测）注入短暂停顿，并要求该负例输出正的
-`deadline_misses` / `rate_count_violations` 后失败。
-
-### 在线声光辅助 gate（真实前端，非计数桩）
-
-跟上面 live ingress gate 的区别：这一个把 `LiveEventSource → PumpEvents` 接的换成
-真正的 `OnlineAssistPipeline`（`docs/archive/superpowers/plans/2026-08-24-acoustic-optic-
-online-tracking.md` Task 8），消费端也换成真实的 `OpenCvVisualAssistFrontend` +
-`SonarCfarFrontend`，不是只数包的 `CountingPort`——验证的是"在线闭环真的能把
-合成双目+声呐证据融合成一条 track"，而不只是"消息按速率送达"。
-
-```bash
-ctest --test-dir build -R integration.online_assist_smoke --output-on-failure
-```
-
-`build/bin/online_assist_smoke --duration-s <N> --camera-hz 20 --sonar-hz 10
---state-hz 50 [--drop-visual-at-s <s>] [--drop-sonar-at-s <s>]` 退出码必须为 0，
-最后一行必须包含 `fused_tracks=` 后跟正整数（至少一条同时含 VISUAL+SONAR 来源、
-状态 CONFIRMED 的 track，在整个运行期间出现过——不是只看最后一次快照）、
-`truth_delivered=0`（`/gt/state` 从不喂给这个 port，即使从没提交过参考态事件，
-也用一层计数装饰器实测验证，不是"没提交所以肯定是 0"的假设）、
-`stale_normal_tracks=0`（在没有触发任何 `--drop-*-at-s` 的窗口内，没有 track 因为
-缺更新掉进 STALE）、`queue_capacity_violations=0`、`result_age_p95_ms=` 后跟
-一个 < 250 的数（发布时刻减去这次发布贡献时间最新的一路 capture_time，取 P95）。
-
-合成 fixture 的目标固定在正前方（bearing≈0）：视觉侧图像里一个绿色矩形正好画在
-`CameraIntrinsics.cx` 上，声呐侧同样把目标渲染在 `target_bearing_rad=0.0`——相机和
-声呐各自的 bearing 轴约定只有在正前方这一点上保证一致（除非真的联合标定 intrinsics/
-extrinsics），偏轴角度在两侧不代表同一个物理方向，这个坑在
-`tests/application/online_assist_pipeline_test.cpp` 里也踩过一次，两处注释互相
-呼应。声呐 fixture 刻意只放一个目标簇，不是两个：`SonarTargetExtractor` 给同一帧
-里提取出的每个簇都盖同一个 `source_observation`（继承自那一帧本身的 observation_id
-——`tests/frontends/sonar_target_extractor_test.cpp` 那层已经验证过"保留所有簇"这个
-行为），两个簇因此在同一次 `Associate()` 调用里 id 重复，会被 `TargetAssociator`
-当整批拒绝（这是有意的 provenance 唯一性检查，不是 bug）——早期一版塞了两个簇进去，
-实测每一次 flush 都被拒，包括本该独立成立的单一视觉探测。
-
-`--drop-visual-at-s`/`--drop-sonar-at-s` 之后 CTest 脚本只做基本健全性检查
-（`truth_delivered=0`、`queue_capacity_violations=0` 仍然成立），不逐字段判定退化
-时序；`modality_stale_after_s`/`vehicle_state_stale_after_s` 这个 app 自己配成 0.3s
-（比 `configs/defaults/platform.yaml` 生产默认的 1.0s/0.5s 更紧），只是为了让演示/gate
-在较短的 `--duration-s` 内就能看到明显的降级转换，不代表生产该用这个值。
-
-### HoloOcean 实时闭环 gate（版本化 manifest、故障注入、truth-isolated 评分）
-
-跟上面两个 gate 的区别：这一整套（`docs/archive/superpowers/plans/2026-08-24-holoocean-realtime-closed-loop.md`）
-把消费端换成真实的 HoloOcean 仿真器 + 本仓库自己的 C++ ROS2 网关（`holoocean_realtime_node`），而不是
-本机合成生成器——验证的是"版本化 BlueROV2/AI-D/SV1213 场景真的能通过 HoloOcean → ROS2 → 在线算法链跑
-出正确的目标航迹和任务评分"，不只是"消息按速率送达"。这套 gate 分三层，前两层能在本沙箱跑，第三层
-（真正驱动 HoloOcean）不能：
-
-**纯 Python 逻辑（`adapters/holoocean/.venv/bin/python -m pytest adapters/holoocean/tests`，166 个
-case）**：`scenario_manifest.py`（Task 1，版本化 manifest 校验，拒绝 `algorithm_topics` 里出现
-`/uw/sim/ground_truth`）、`holoocean_driver.py`/`scenario_randomization.py`（Task 2，确定性
-session/随机化）、`ros_message_conversion.py`/`pilot_command_model.py`/`scripted_pilot.py`/
-`realtime_ros_session.py`（Task 3，ROS2 发布 + 驾驶命令模型）、`fault_injector.py`/
-`sensor_perturbation.py`/`async_diagnostic_recorder.py`/`task_scorer.py`（Task 5，确定性网络故障 +
-truth-isolated 评分——`TaskScorer` 是全系统唯一允许消费真值的地方）、`run_report.py`（Task 6，
-`evaluate_gate()` + minimum/nominal/disturbed/overload 四档门限，350/150、250/100、500/200 ms 三组
-fusion/state age 边界都单独测过）。
-
-**C++ 部分组件（`ctest --test-dir build -R HoloOceanLiveConversion`）**：
-`include/adapters/holoocean_live_conversion.hpp` 的 `ConvertHoloImage`/`ConvertHoloSonar` 组装
-`ObservationHeader`（`sequence_id`/`calibration_version`/`receive_clock_domain`）不需要真实 ROS2；真正
-订阅话题、驱动 `LiveEventSource → PumpEvents → OnlineAssistPipeline → OperatorOverlayRenderer` 的
-`holoocean_realtime_node`（`adapters/ros2/src/holoocean_realtime_node.cpp` + 依赖反转的
-`include/adapters/holoocean_realtime_sink.hpp`，把 `application`/`runtime` 层的东西挡在
-`adapters/ros2/` 之外，满足 `tools/lint/check_layer_dependencies.py` 的 `ros2` 角色白名单）已经在本机
-真实 ROS2 Jazzy 环境下编译、链接成功（`cmake -S . -B build_ros2 -DUW_BUILD_ROS2=ON && cmake --build
-build_ros2 --target holoocean_realtime_node`），但没有真实 `holoocean_main` 进程喂话题——跟
-`adapters/ros2/README.md` 记录的 `holoocean_sonar_bridge_node` 状态完全一致。
-
-**追溯性（`python3 -m pytest tests/tools/test_realtime_traceability.py` +
-`python3 tools/lint/check_realtime_traceability.py docs/traceability/rov-realtime-closed-loop.csv`）**：
-`docs/traceability/rov-realtime-closed-loop.csv` 覆盖三份规格文档
-（`docs/specifications/{rov-competition-online-system-requirements,rov-acoustic-optic-online-fusion-spec,
-holoocean-realtime-closed-loop-simulation-spec}.md`）里全部 125 条 `SYS-*`/`FUS-*`/`SIM-*` 需求，硬件
-`SYS-PROC-*` 和池测数据 `SIM-S2R-001` 强制标 `gated`（lint 脚本会拒绝把它们标成别的状态）；lint 脚本本身
-也检查真实文件缺行、状态枚举值、`verified` 行的证据文件是否存在。
-
-**只能在原生主机跑（这台机器没有 GPU/Unreal Engine 二进制，跟 Tasks 1-3 的 HoloOcean 现状完全一致）**：
-```bash
-python -m uw_holoocean_adapter.realtime_gate --profile configs/experiment/rov_realtime_minimum.yaml \
-  --task adapters/holoocean/scenarios/aquaculture_search.yaml --seed 42
-python -m uw_holoocean_adapter.realtime_gate --profile configs/experiment/rov_realtime_nominal.yaml \
-  --task adapters/holoocean/scenarios/aquaculture_search.yaml --seeds 40 41 42 43 44 45 46 47 48 49
-python -m uw_holoocean_adapter.realtime_gate --profile configs/experiment/rov_realtime_nominal.yaml \
-  --task adapters/holoocean/scenarios/structure_inspection.yaml --seed 42 --soak-duration-s 7200
-python -m uw_holoocean_adapter.realtime_gate --profile configs/experiment/rov_realtime_disturbed.yaml \
-  --task adapters/holoocean/scenarios/aquaculture_search.yaml --seeds 50 51 52 53 54 55 56 57 58 59
-python -m uw_holoocean_adapter.realtime_gate --profile configs/experiment/rov_realtime_overload.yaml \
-  --task adapters/holoocean/scenarios/structure_inspection.yaml --seed 42
-```
-`realtime_gate.py` 的进程编排/参数校验/fail-closed 路径（缺 manifest、缺 gateway 二进制）已经在本沙箱验证
-过（不需要真实 HoloOcean 就能触发这些失败路径），但四进程真正跑起来（HoloOcean session + C++ 网关 +
-scripted pilot + scorer）需要真实主机——`ScriptedPilot`/`TaskScorer` 目前作为 `multiprocessing.Process`
-跑在 `realtime_gate.py` 自己进程里（没有独立 CLI，见 `adapters/holoocean/README.md`），不是通过 ROS2 话题
-真正驱动，这是本次实现的已知边界，不是没测对。
 
 ### 手动跑端到端 Demo
 
@@ -263,23 +125,12 @@ ATE RMSE `0.5596 m`，求解器 30 次迭代后 `stalled`；因为该 bag 没有
 - **本机上的 HoloOcean 真实仿真器回归**：这台机器没有 Unreal Engine 二进制和 Epic
   Games 账号联动，不能重跑 `HoloOceanSession`。原生 Windows HoloOcean 2.3.0 已产生过
   一份真实录制并完成上述离线回放，但还没有版本化、全传感器的自动回归数据集。
-- **公开数据集 adapter**（`adapters/datasets/`）：只是接口占位，未实现，没有可跑的
   测试。
 - **大规模地图质量回归**：`ComputeMapMetrics` 已有小点集单测，但还是 `O(NM)` 暴力
   最近邻，也没有版本化 reference map；不能直接用于回放产生的数百万局部地图数据点。
 - **可信 TSan**：CMake 保留 `-DUW_SANITIZER=thread`，但当前 conda-forge
   protobuf/gtest 动态库未用 TSan 插桩，会产生假阳性；CI 只跑 ASan+UBSan。要启用 TSan
   门禁需先从源码重编这些依赖，并在本沙箱处理 ASLR 限制。
-- **ROS2 桥下游数据流**：节点能编译、能独立启动，但没有真实 `holoocean_main` 进程
-  喂话题，也没有接到 `SonarFrontend::ProcessSonarFrame`，所以"跑起来看到声呐数据被
-  处理"这件事目前做不到——这是[架构文档](./acoustic-optic-slam-platform-architecture-2026-08-17.md)
-  记录的已知边界，不是没测对。
-- **HoloOcean 实时闭环的 minimum/nominal/disturbed/overload 四档 native gate**（`realtime_gate.py`
-  的 `--profile configs/experiment/rov_realtime_*.yaml` 系列命令，见上面"HoloOcean 实时闭环 gate"一节）：
-  同样受限于本机没有 GPU/Unreal Engine——`realtime_gate.py` 自己的编排/校验/fail-closed 逻辑已验证，
-  但四进程真正跑起来产生 RTF/数据年龄/资源占用等真实数字，以及 10-seed 任务成功率统计，都要留给原生
-  主机；`ScriptedPilot`/`TaskScorer` 目前是 `realtime_gate.py` 内部的 `multiprocessing.Process`，
-  没有独立走 ROS2 话题（`/uw/hmi/status`/`/uw/pilot/thrusters`）驱动，是本次实现的已知边界。
 
 ## 环境速查
 
@@ -287,6 +138,5 @@ ATE RMSE `0.5596 m`，求解器 30 次迭代后 `stalled`；因为该 bag 没有
 |---|---|---|
 | `uw_slam_build` conda env | C++ 构建、ctest、所有 `build/` 下的可执行文件 | `export PATH="$HOME/miniconda3/envs/uw_slam_build/bin:$PATH"` |
 | `adapters/holoocean/.venv` | Python 适配器 pytest、`gen_py.sh` | 直接用 `.venv/bin/pytest` / `.venv/bin/python`，不要指望 `PATH` 上的全局 `pytest` |
-| ROS2 Jazzy + `~/ros2_ws` | 编译/运行 `uw_holoocean_sonar_bridge_node` | `source /opt/ros/jazzy/setup.bash && source ~/ros2_ws/install/setup.bash`，两者都要 source，缺一个 `find_package(holoocean_interfaces)` 就会失败 |
 
 三个环境互不重叠，也不需要同时加载——按你要测的那一项对号入座即可。

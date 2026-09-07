@@ -47,9 +47,8 @@ DEFAULT_SENSOR_FRAME = "imu_link"
 
 def _bootstrap_schema_path() -> None:
     """Generated schema_pb2/ sits alongside this file (see
-    tools/codegen/gen_py.sh) but isn't on sys.path by default — same
-    pattern as adapters/datasets/uw_dataset_adapter/euroc_converter.py's
-    identically-named helper."""
+    tools/codegen/gen_py.sh) but isn't on sys.path by default — insert it
+    before the generated modules can be imported."""
     schema_dir = pathlib.Path(__file__).parent / "schema_pb2"
     if schema_dir.is_dir() and str(schema_dir) not in sys.path:
         sys.path.insert(0, str(schema_dir))

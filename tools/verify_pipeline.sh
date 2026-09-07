@@ -4,15 +4,12 @@
 # step's exact command + full stdout/stderr + pass/fail + timing under
 # --out-dir so a run can be inspected or compared later. Everything here is
 # the synth_bag_gen -> replay_demo path plus the C++/Python test suites —
-# the part of the platform that does NOT need a live HoloOcean/UE5/ROS2
-# simulator (see README.md "运行端到端 demo"). The ROS2 bridge build is
-# opt-in via --with-ros2 since it needs a pre-existing colcon workspace
-# (see README.md's "adapters/ros2" build instructions) that most machines
-# won't have set up.
+# the part of the platform that does NOT need a live HoloOcean/UE5
+# simulator (see README.md "运行端到端 demo").
 #
 # Usage:
 #   tools/verify_pipeline.sh [--out-dir DIR] [--experiment PATH]
-#                             [--build-dir DIR] [--clean] [--with-ros2]
+#                             [--build-dir DIR] [--clean]
 #
 # Exit status: 0 if every step passed, 1 if any step failed (summary.txt
 # and per-step logs are written either way).
@@ -25,7 +22,6 @@ OUT_DIR="${TMPDIR:-/tmp}/uw_slam_verify/$(date +%Y%m%d_%H%M%S)"
 EXPERIMENT="configs/experiment/synthetic_smoke.yaml"
 BUILD_DIR="build"
 CLEAN=0
-WITH_ROS2=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +29,6 @@ while [ $# -gt 0 ]; do
     --experiment) EXPERIMENT="$2"; shift 2 ;;
     --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --clean) CLEAN=1; shift ;;
-    --with-ros2) WITH_ROS2=1; shift ;;
     -h|--help)
       sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -147,30 +142,6 @@ DEMO_PREFIX="$OUT_DIR/demo"
 step replay_demo "$BUILD_DIR/bin/replay_demo" \
   --bag "$BAG" --experiment "$EXPERIMENT" --out "$DEMO_PREFIX"
 REPLAY_LOG="$LAST_LOG"
-
-# 8) optional: ROS2 bridge build (needs a pre-built ~/ros2_ws colcon
-# workspace — see README.md's "adapters/ros2" section; not attempted unless
-# --with-ros2 is passed, and skipped cleanly if the workspace isn't there).
-if [ "$WITH_ROS2" -eq 1 ]; then
-  if [ -f "$HOME/ros2_ws/install/setup.bash" ] && [ -f /opt/ros/jazzy/setup.bash ]; then
-    ROS2_BUILD_DIR="${BUILD_DIR}_ros2"
-    # ROS2's setup.bash references unset variables (e.g. AMENT_TRACE_SETUP_FILES)
-    # and trips `set -u`; relax it just for sourcing.
-    set +u
-    # shellcheck disable=SC1091
-    source /opt/ros/jazzy/setup.bash
-    # shellcheck disable=SC1091
-    source "$HOME/ros2_ws/install/setup.bash"
-    set -u
-    export PATH="$HOME/miniconda3/envs/uw_slam_build/bin:$PATH"
-    step configure_ros2 cmake -S . -B "$ROS2_BUILD_DIR" \
-      -DCMAKE_PREFIX_PATH="$HOME/miniconda3/envs/uw_slam_build" -DUW_BUILD_ROS2=ON
-    step build_ros2 cmake --build "$ROS2_BUILD_DIR" -j"$(nproc)" --target holoocean_sonar_bridge_node
-  else
-    echo "==> [--with-ros2] skipped: ~/ros2_ws or /opt/ros/jazzy not found"
-    echo "with-ros2               SKIP      -  no ~/ros2_ws/install/setup.bash or /opt/ros/jazzy/setup.bash" >> "$SUMMARY"
-  fi
-fi
 
 # Pull the ATE line out of the replay_demo log into the summary, and copy
 # the artifacts replay_demo produced next to the logs.

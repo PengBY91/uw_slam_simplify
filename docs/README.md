@@ -4,41 +4,15 @@
 如何跑起来”；本页负责回答“遇到具体任务时应该读哪份文档，以及不同文档冲突时以谁
 为准”。
 
-## ROV 在线系统规范性入口
-
-下列三份文档是 BlueROV2 Heavy + SV1213 + AI-D 方案的当前规范性基线。路线图、实施计划
-和历史录制说明不得覆盖其中的系统边界、接口与验收要求。
-
-| 文档 | 权威范围 |
-|---|---|
-| [ROV 竞赛在线系统需求规格](./specifications/rov-competition-online-system-requirements.md) | 硬件与任务基线、在线闭环边界、实时性能、降级和整体验收 |
-| [HoloOcean 实时闭环仿真规格](./specifications/holoocean-realtime-closed-loop-simulation-spec.md) | 仿真资产、传感器、时间、随机化、故障、真值隔离和仿真验收 |
-| [ROV 声光在线融合链路规格](./specifications/rov-acoustic-optic-online-fusion-spec.md) | 在线输入、校验、缓存、同步、前端、关联、航迹、输出与健康契约 |
-
-```mermaid
-flowchart TB
-    R["正式赛事规则（未冻结）"] --> S1["ROV 竞赛在线系统需求规格"]
-    S1 --> S2["HoloOcean 实时闭环仿真规格"]
-    S1 --> S3["ROV 声光在线融合规格"]
-    S2 --> LOW["路线图 / 实施计划 / 配置 / 测试<br/>不得覆盖上位规格的系统边界、接口与验收要求"]
-    S3 --> LOW
-    style R fill:#e8eaf6,stroke:#3f51b5
-    style S1 fill:#e8eaf6,stroke:#3f51b5
-```
-
-三者的权威顺序是：正式赛事规则 → 在线系统需求规格 → 两份下位规格 → 路线图、实施计划、
-配置和测试。正式规则未冻结期间，两项基线任务是“寻找养殖区”和“按规定路径巡检水下
-结构物”；其他任务作为规则驱动扩展。
-
 ## 文档地图
 
 当前文档分四类，`archive/` 之外的每一份都描述“当前应该依据什么”：
 
 | 类别 | 文档 |
 |---|---|
-| **规范（Normative）** | [`specifications/`](./specifications/) 三份规格、[ROV 平台参数确认表](./ROV平台参数.md)、[ROV 平台到货前准备工作规格](./ROV平台到货前准备工作规格-2026-09-02.md)、[`calibration/`](./calibration/) 两份双目文档 |
+| **规范（Normative）** | [ROV 平台参数确认表](./ROV平台参数.md)、[ROV 平台到货前准备工作规格](./ROV平台到货前准备工作规格-2026-09-02.md)、[`calibration/`](./calibration/) 两份双目文档 |
 | **设计（Design）** | [长期架构设计](./acoustic-optic-slam-platform-architecture-2026-08-17.md)、[ROV 平台落地路线图](./ROV平台落地路线图.md)、[IMU 预积分设计短文](./imu-preintegration-design-2026-09-03.md)、[稀疏控制点评测定义](./sparse-control-point-evaluation-2026-09-03.md) |
-| **代码事实（Descriptive）** | [新人上手指南](./uw-slam-newcomer-guide.md)、[代码库参考](./uw-slam-codebase-reference-2026-08-18.md)、[离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md)、[ROV 实时闭环深度走读](./uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md)、[测试与验证指南](./testing-and-verification-guide-2026-08-20.md) |
+| **代码事实（Descriptive）** | [新人上手指南](./uw-slam-newcomer-guide.md)、[代码库参考](./uw-slam-codebase-reference-2026-08-18.md)、[离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md)、[测试与验证指南](./testing-and-verification-guide-2026-08-20.md) |
 | **对外讲解（Explanatory）** | [两条主线通俗讲解](./两条主线通俗讲解-2026-08-28.md)、[声光融合 SLAM 技术剖析](./声光融合SLAM技术剖析-2026-08-28.md) |
 | **历史过程记录** | [`archive/`](./archive/)——已执行完的实施计划、一次性代码审查与被取代的早期方案，**不作为当前依据**，只用于回答“当初为什么这么做” |
 
@@ -65,7 +39,6 @@ flowchart TB
 |---|---|---|
 | 新贡献者第一次读代码、搞清楚整条调用链 | [新人上手指南](./uw-slam-newcomer-guide.md) | [代码库参考](./uw-slam-codebase-reference-2026-08-18.md) |
 | 深入理解离线 SLAM 管线（主线一）每个阶段的机制、数学与设计原因 | [离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md) | [新人上手指南](./uw-slam-newcomer-guide.md#两条主线共享的地基) |
-| 深入理解 ROV 在线驾驶辅助（主线二）的实时闭环链路与降级语义 | [ROV 实时闭环深度走读](./uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md) | [在线融合规格](./specifications/rov-acoustic-optic-online-fusion-spec.md) |
 | 向不读代码的人讲清楚这套系统在做什么 | [两条主线通俗讲解](./两条主线通俗讲解-2026-08-28.md) | [声光融合 SLAM 技术剖析](./声光融合SLAM技术剖析-2026-08-28.md) |
 | 弄清两条主线各自用了什么估计理论、为什么这么选 | [声光融合 SLAM 技术剖析](./声光融合SLAM技术剖析-2026-08-28.md) | 两份深度走读 |
 | 查找类型、接口、算法或 CMake target | [代码库参考](./uw-slam-codebase-reference-2026-08-18.md) | [根 README](../README.md) |
@@ -79,9 +52,7 @@ flowchart TB
 | 选型/设计双目相机机械与电气方案（交采购、结构） | [双目安装约束](./calibration/stereo-mounting-constraints.md) | [双目到货验收与标定](./calibration/stereo-acceptance.md) |
 | 双目到货后标定并判断能否进主线 | [双目到货验收与标定](./calibration/stereo-acceptance.md) | [双目安装约束](./calibration/stereo-mounting-constraints.md) |
 | 接手 HoloOcean 仿真工作包（数字孪生、关卡、设备伪装层） | [仿真工作交办说明](./仿真工作交办-2026-09-02.md) | [ROV 平台到货前准备工作规格](./ROV平台到货前准备工作规格-2026-09-02.md) 工作包 A、[HoloOcean 适配器](../adapters/holoocean/README.md) |
-| 开发或验收 ROV 在线驾驶辅助系统 | [ROV 竞赛在线系统需求规格](./specifications/rov-competition-online-system-requirements.md) | [HoloOcean 实时闭环仿真规格](./specifications/holoocean-realtime-closed-loop-simulation-spec.md)、[声光在线融合规格](./specifications/rov-acoustic-optic-online-fusion-spec.md) |
-| 修改 HoloOcean Python 网关 | [HoloOcean 适配器](../adapters/holoocean/README.md) | [ROV 实时闭环深度走读](./uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md) |
-| 构建或排查 ROS2 接入 | [ROS2 适配器](../adapters/ros2/README.md) | [外部仓库恢复说明](../external_repos/README.md) |
+| 修改 HoloOcean Python 网关 | [HoloOcean 适配器](../adapters/holoocean/README.md) | [仿真工作交办说明](./仿真工作交办-2026-09-02.md) |
 | 理解第三方仓库角色与风险 | [外部代码概览](../external_repos/external-repos-overview.md) | [外部仓库恢复说明](../external_repos/README.md) |
 | 移植第三方实现或核对许可证 | [NOTICE](../NOTICE) | [外部代码概览](../external_repos/external-repos-overview.md) |
 | 查看团队开发约定与已知工程陷阱 | [CLAUDE.md](../CLAUDE.md) | [根 README](../README.md#参与开发) |
@@ -94,15 +65,11 @@ flowchart TB
 | [根 README](../README.md) | 当前入口 | 项目定位、快速开始、已验证能力与限制 | 当前工作树，2026-08-26 |
 | [新人上手指南](./uw-slam-newcomer-guide.md) | 当前说明 | 两条主线共享地基、调用链、目录职责速查、常见误解边界 | 当前工作树，2026-09-04 |
 | [离线 SLAM 管线深度走读](./uw-slam-offline-slam-pipeline-deep-dive-2026-08-28.md) | 当前事实 | 主线一（synth_bag_gen → replay_demo）逐阶段机制、残差/求解器数学、v1 简化边界 | 当前工作树（`f4d3f3e`），2026-08-28 |
-| [ROV 实时闭环深度走读](./uw-slam-rov-realtime-closed-loop-deep-dive-2026-08-28.md) | 当前事实 | 主线二（HoloOcean → 网关 → 四车道 → 在线融合 → HMI/飞手）逐阶段机制、降级状态机、gate 体系 | 当前工作树（`f4d3f3e`），2026-08-28 |
 | [代码库参考](./uw-slam-codebase-reference-2026-08-18.md) | 当前事实 | 当前类型、函数、参数、数据流、测试与工具 | `8df083b` + 当前工作树，2026-08-22 |
 | [长期架构设计](./acoustic-optic-slam-platform-architecture-2026-08-17.md) | 已批准设计 | 长期目标、模块边界、不变量与阶段决策 | 状态映射核对至 2026-08-22 |
 | [测试与验证指南](./testing-and-verification-guide-2026-08-20.md) | 当前说明 | 分功能验证命令、判定标准与运行环境要求 | `8df083b` + 当前工作树，2026-08-22 |
 | [两条主线通俗讲解](./两条主线通俗讲解-2026-08-28.md) | 当前讲解 | 面向非代码读者的系统作用与数据流转 | 2026-08-28 |
 | [声光融合 SLAM 技术剖析](./声光融合SLAM技术剖析-2026-08-28.md) | 当前讲解 | 两条主线的估计理论选择及其代码落点 | 2026-08-28 |
-| [ROV 竞赛在线系统需求规格](./specifications/rov-competition-online-system-requirements.md) | 已确认规范 | 方案二硬件、基线任务、在线系统边界、性能和总体验收 | 2026-08-24 |
-| [HoloOcean 实时闭环仿真规格](./specifications/holoocean-realtime-closed-loop-simulation-spec.md) | 已确认规范 | 实时闭环仿真、传感器/时间/故障模型和仿真验收 | 2026-08-24 |
-| [ROV 声光在线融合链路规格](./specifications/rov-acoustic-optic-online-fusion-spec.md) | 已确认规范 | AI-D/SV1213/BlueROV2 在线数据到 HMI 的融合契约 | 2026-08-24 |
 | [ROV 平台参数确认表](./ROV平台参数.md) | 合同事实 | 合同技术附件参数的仓库内唯一转写来源 | 2026-09-02 |
 | [ROV 平台到货前准备工作规格](./ROV平台到货前准备工作规格-2026-09-02.md) | 当前工作规格 | 到货前不依赖实物的准备工作范围、任务与验收 | v1.3，2026-09-03 |
 | [ROV 平台落地路线图](./ROV平台落地路线图.md) | 讨论稿 | 一年期、由比赛场景牵引的平台落地节奏 | 2026-09-02 |
@@ -113,7 +80,6 @@ flowchart TB
 | [仿真工作交办说明](./仿真工作交办-2026-09-02.md) | 进行中的交办 | 工作包 A 的执行顺序与完成判定 | 2026-09-02 |
 | [配置说明](../configs/README.md) | 组件当前说明 | 四层配置字段、覆盖顺序和消费范围 | 随配置代码维护 |
 | [HoloOcean 适配器](../adapters/holoocean/README.md) | 组件当前说明 | Python 网关安装、代码生成和验证边界 | 随适配器维护 |
-| [ROS2 适配器](../adapters/ros2/README.md) | 组件当前说明 | ROS2 构建、目标状态和未接通边界 | 随适配器维护 |
 | [外部代码概览](../external_repos/external-repos-overview.md) | 当前参考 | 上游角色、接口、审计结论和移植风险 | `919e1f0`，2026-08-19 |
 | [NOTICE](../NOTICE) | 来源权威记录 | 移植文件、上游许可证、保留和排除范围 | 每次移植时更新 |
 | [`archive/`](./archive/) 下全部文档 | 历史过程记录 | 仅解释“当初为什么这么做”，不描述当前实现，也不构成验收依据 | 归档时点 |
@@ -131,9 +97,9 @@ flowchart TB
 4. **未来模块边界与技术决策**：已批准的长期架构设计优先。
 5. **早期方案与演进原因**：`archive/` 下的材料仅作历史与工程背景参考。
 
-ROV 在线系统范围内，正式赛事规则和三份规范性文档优先于第 4、5 项中的通用或历史
-材料；源码仍然是“当前已经实现什么”的事实依据。规范高于当前实现不表示能力已经落地，
-而表示需要登记和关闭的实现缺口。
+主线二（ROV 实时闭环/在线辅助）已于 2026-09 从 main 剥离，完整快照在
+`archive/rov-realtime-line2` 分支；`archive/` 下涉及主线二的过程文档随之只作历史
+参考。源码仍然是“当前已经实现什么”的事实依据。
 
 发现文档与代码不一致时，不要静默选择其中一个：先用测试或源码确认事实，再更新对应
 的当前文档；若影响目标决策，同时更新架构文档或记录新的决策说明。

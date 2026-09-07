@@ -115,8 +115,9 @@ std::string HashActiveConfig(const SonarCfarFrontendParams& params) {
 // understate the sensor's own base resolution. Without this, every
 // detection reported the same fixed sigma regardless of beam width or
 // cluster spread -- see docs/archive/rov-realtime-closed-loop-code-review-2026-08-
-// 27.md finding D3: an overconfident (too-tight) sigma makes TargetAssociator::
-// Fuse() over-trust sonar relative to vision when the two disagree.
+// 27.md finding D3: an overconfident (too-tight) sigma makes downstream
+// fusion over-trust sonar relative to vision when the two disagree
+// (the named consumer lived in the since-removed line-2 tracking stack).
 constexpr double kUniformStdDenominator = 3.4641016151377544;  // sqrt(12.0)
 
 double ExtentAdaptiveSigma(double extent, double default_sigma) {

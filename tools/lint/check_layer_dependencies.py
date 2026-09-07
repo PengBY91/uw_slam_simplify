@@ -51,7 +51,6 @@ ALLOWED = {
         "opencv_adapters", "measurement_api", "sensor_models", "domain", "domain_proto"
     },
     "application": PROJECT_ROLES | {"domain_proto"},
-    "ros2": {"adapters", "measurement_api", "sensor_models", "domain", "domain_proto"},
     "apps": PROJECT_ROLES | {"domain_proto"},
 }
 
@@ -64,8 +63,6 @@ def owner(root: Path, path: Path):
         return parts[1] if parts[1] in INCLUDE_SRC_OWNERS else None
     if parts[0:2] == ("adapters", "opencv"):
         return "opencv_adapters"
-    if parts[0] == "adapters" and len(parts) > 1 and parts[1] == "ros2":
-        return "ros2"
     if parts[0] == "apps":
         return "apps"
     return None
@@ -201,7 +198,7 @@ def included_role(header: str):
 
 
 def source_files(root: Path):
-    for relative in ("include", "src", "adapters/ros2", "adapters/opencv", "apps"):
+    for relative in ("include", "src", "adapters/opencv", "apps"):
         base = root / relative
         if not base.exists():
             continue
@@ -232,9 +229,9 @@ def check(root: Path):
                 continue
             location = f"{path.relative_to(root)}:{line_number}"
             header = match.group(1)
-            if header.startswith(ROS_VENDOR_PREFIXES) and source_owner != "ros2":
+            if header.startswith(ROS_VENDOR_PREFIXES):
                 errors.append(
-                    f"{location}: ROS/vendor header {header} is only allowed in adapters/ros2"
+                    f"{location}: ROS/vendor header {header} is not allowed in core sources"
                 )
                 continue
             if header.startswith("opencv2/") and not opencv_private_source:

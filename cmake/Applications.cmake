@@ -69,25 +69,3 @@ uw_apply_application_defaults(acoustic_optic_scenario_matrix)
 add_executable(bag_audit apps/bag_audit.cpp)
 target_link_libraries(bag_audit PRIVATE uw::domain uw::core uw::runtime)
 uw_apply_application_defaults(bag_audit)
-
-add_executable(live_ingress_smoke apps/live_ingress_smoke.cpp)
-target_link_libraries(live_ingress_smoke PRIVATE
-  uw::application uw::runtime Threads::Threads
-)
-uw_apply_application_defaults(live_ingress_smoke)
-
-add_executable(online_assist_smoke apps/online_assist_smoke.cpp)
-target_link_libraries(online_assist_smoke PRIVATE
-  uw::application uw::runtime uw::core uw::frontends uw::opencv_adapters Threads::Threads
-)
-uw_apply_application_defaults(online_assist_smoke)
-
-if(UW_BUILD_ROS2)
-  add_executable(holoocean_sonar_bridge_node adapters/ros2/src/holoocean_sonar_bridge_main.cpp)
-  target_link_libraries(holoocean_sonar_bridge_node PRIVATE uw::ros2_adapters)
-  uw_apply_application_defaults(holoocean_sonar_bridge_node)
-
-  add_executable(holoocean_realtime_node adapters/ros2/src/holoocean_realtime_node.cpp)
-  target_link_libraries(holoocean_realtime_node PRIVATE uw::ros2_adapters uw::application)
-  uw_apply_application_defaults(holoocean_realtime_node)
-endif()

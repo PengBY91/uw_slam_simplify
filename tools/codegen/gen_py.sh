@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates Python protobuf bindings for schemas/proto/uw/domain/ into
 # adapters/holoocean/uw_holoocean_adapter/schema_pb2/ by default, or the
-# directory passed as $1 (e.g. adapters/datasets/uw_dataset_adapter/
-# schema_pb2 — see that adapter's own bootstrap). Generated files are
+# directory passed as $1 (e.g. adapters/wit_imu/uw_wit_imu/schema_pb2
+# — see that adapter's own bootstrap). Generated files are
 # gitignored (**/*_pb2.py) — this is a dev-setup step, not a checked-in
 # artifact, so the .proto files stay the single source of truth (no risk of
 # a stale generated copy drifting from schemas/proto/).

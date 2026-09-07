@@ -266,7 +266,7 @@ McapEventSource (runtime)                MCAP bag → CanonicalEvent 流
          → ReplayInputData               images/sonar_frames/evidence/reference_states/... 平铺向量
 ```
 
-这是主线一与主线二（实时）共用的契约：`EventSource` 抽象了"事件从哪来"
+这是回放链路的输入契约：`EventSource` 抽象了"事件从哪来"
 （MCAP/内存/实时），`PipelineInputPort` 抽象了"事件到哪去"，算法代码对来源无感。
 一致性由 `tests/integration/event_source_parity_test.cpp` 把关：同一批事件走 MCAP
 与内存两种 source，应用侧看到的顺序必须一致。

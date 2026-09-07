@@ -46,7 +46,7 @@
 
 到货前或到货时，结构侧请提供以下数字，软件侧据此填 `configs/rig/bluerov2_contract.yaml` 的 `camera_left_link`/`camera_right_link` 外参：
 
-1. 左、右相机光心相对机体原点（`base_link`，定义见 `docs/specifications/` 坐标约定：x 前、y 左、z 上）的位置，CAD 值，单位 m，三位小数。
+1. 左、右相机光心相对机体原点（`base_link`，定义见根 README「坐标系与符号约定」：x 前、y 左、z 上）的位置，CAD 值，单位 m，三位小数。
 2. 两相机光轴相对 +x 的偏角（设计值应为 0）。
 3. 云台相机（IMX462）**锁死俯仰角**（规格开放问题 3），决定 `camera_main_link` 外参。
 4. 声呐换能器中心、HWT9053 IMU 中心相对 `base_link` 的位置。
@@ -59,7 +59,7 @@
 - rig 文件填入标定值（`stereo-acceptance.md` 第 2 步）；
 - `adapters/holoocean/scenarios/blue_rov_contract_stereo.json` 已按同样的几何放置仿真双目，仿真回归先行；
 - `estimator_mode` 切到阶段 2 组合模式（双目 VO + IMU 预积分 + 声呐配准并存，任一来源缺席自动降级）；
-- 回环闭合前端在该模式下可开；在线辅助管线视觉侧恢复双目深度。
+- 回环闭合前端在该模式下可开。
 
 不满足 M2/M3/M6 中任何一条，上述路径要重新调参甚至改前端，参考教训 (a) 的代价是"ATE 从 0.67 m 到 4.32 m"。
 
