@@ -232,10 +232,7 @@ ROS2 / HoloOcean / datasets / third_party
 uw::measurement_api ─→ uw::sensor_models ─→ uw::domain
 ~~~
 
-（C++ 层面 `uw::sensor_models` 与 `uw::measurement_api` 是各自独立的 include 分区
-`include/sensor_models/`、`include/measurement_api/`，但 CMake 里合并进同一个
-`core`/`uw::core` target 一起编译——这里的箭头描述的是 API/namespace 边界，不是
-物理 CMake target 拆分，见 `cmake/Libraries.cmake`。）
+（C++ 层面 `uw::sensor_models` 与 `uw::measurement_api` 是各自独立的 include 分区 `include/sensor_models/`、`include/measurement_api/`，但 CMake 里合并进同一个 `core`/`uw::core` target 一起编译——这里的箭头描述的是 API/namespace 边界，不是物理 CMake target 拆分，见 `cmake/Libraries.cmake`。）
 
 依赖不变量：
 

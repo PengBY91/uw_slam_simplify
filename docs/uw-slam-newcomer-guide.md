@@ -7,8 +7,7 @@
 
 ## 一句话概括
 
-`uw_slam` 是一个以 Protobuf 规范化消息模型为中心、算法与 HoloOcean 解耦的水下声光
-融合 SLAM 平台。目前处于“模块骨架 + 可运行端到端链路”阶段，还不是统一的实时产品系统。
+`uw_slam` 是一个以 Protobuf 规范化消息模型为中心、算法与 HoloOcean 解耦的水下声光融合 SLAM 平台。目前处于“模块骨架 + 可运行端到端链路”阶段，还不是统一的实时产品系统。
 
 ## 整体逻辑结构
 
@@ -45,8 +44,7 @@ MeasurementEvidence / HypothesisSet
                          Submap / 指标 / 轨迹 / Manifest
 ```
 
-顶层 [`CMakeLists.txt`](../CMakeLists.txt) 与集中式 `cmake/Libraries.cmake` 基本就是
-完整的模块依赖清单。
+顶层 [`CMakeLists.txt`](../CMakeLists.txt) 与集中式 `cmake/Libraries.cmake` 基本就是完整的模块依赖清单。
 
 | 目录 | 核心职责 |
 |---|---|
@@ -59,34 +57,23 @@ MeasurementEvidence / HypothesisSet
 | `include/estimation`、`src/estimation` | 位姿图和 Eigen 实现的 Gauss-Newton/LM |
 | `include/mapping`、`src/mapping` | 局部地图证据管理、融合深度到点云的转换 |
 | `include/runtime`、`src/runtime` | MCAP、配置、同步、RunManifest 等 runtime 支持原语 |
-| `adapters/` 各子目录 | HoloOcean（Python 录制）、OpenCV、Ceres、nanoflann、wit_imu 等外部系统边界 |
+| `adapters/` 各子目录 | HoloOcean（Python 录制）、OpenCV、nanoflann、wit_imu 等外部系统边界 |
 | `include/evaluation`、`src/evaluation` | ATE、深度/融合和点云地图质量指标（尚无 RPE） |
 | `include/application`、`src/application` | 跨算法、runtime 与评测层的用例编排；当前即离线回放管线（`replay_pipeline`） |
 | `apps` | 参数解析和进程入口；调用 `application` 服务或单一用途的共享原语 |
 | `tests` | 消息格式与接口一致性测试（`contracts/`）、按层单元测试、确定性回放（`integration/`） |
 | `external_repos` | 只读参考代码，不是本系统运行主体 |
 
-最重要的设计规则是：算法层不能知道 HoloOcean 或 vendor 类型；外部数据进入
-算法层前，必须先转换成 Protobuf 规范化消息类型。第三方依赖各自隔离在一个 adapter 里
-——OpenCV 在 `adapters/opencv/`、Ceres 在 `adapters/ceres/`、
-nanoflann 在 `adapters/spatial_index/`；`estimation`/`mapping` 只看得到纯虚接口
-（`Solver`、`SurfelSpatialIndex`），具体实现由 `application` 注入。这条不变量由
-`tools/lint/check_no_ros_in_core.sh`（实际实现 `tools/lint/check_layer_dependencies.py`）
-强制检查，改完代码顺手跑一下。
+最重要的设计规则是：算法层不能知道 HoloOcean 或 vendor 类型；外部数据进入算法层前，必须先转换成 Protobuf 规范化消息类型。第三方依赖各自隔离在一个 adapter 里——OpenCV 在 `adapters/opencv/`、nanoflann 在 `adapters/spatial_index/`；`mapping` 见到的空间索引是纯虚接口（`SurfelSpatialIndex`），具体实现由 `application` 注入（Ceres 适配器已随 2026-09 精简移除，快照在 `archive/rov-realtime-line2` 分支）。这条不变量由 `tools/lint/check_no_ros_in_core.sh`（实际实现 `tools/lint/check_layer_dependencies.py`）强制检查，改完代码顺手跑一下。
 
-`schemas/proto/` 只定义可跨语言传递的消息类型；`include/measurement_api` 则定义
-C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 Protobuf 的唯一事实源。
+`schemas/proto/` 只定义可跨语言传递的消息类型；`include/measurement_api` 则定义 C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 Protobuf 的唯一事实源。
 
 理解这一规则可以从以下接口开始：
 
-- [`include/domain/domain.hpp`](../include/domain/domain.hpp)：
-  Protobuf 类型安全包装、量测结果构造和校验。
-- [`include/measurement_api/frontend.hpp`](../include/measurement_api/frontend.hpp)：
-  声呐和光学前端接口。
-- [`include/measurement_api/factor_builder.hpp`](../include/measurement_api/factor_builder.hpp)：
-  从量测结果构造残差块的接口。
-- [`include/measurement_api/residual_block.hpp`](../include/measurement_api/residual_block.hpp)：
-  求解器使用的残差和雅可比接口。
+- [`include/domain/domain.hpp`](../include/domain/domain.hpp)：Protobuf 类型安全包装、量测结果构造和校验。
+- [`include/measurement_api/frontend.hpp`](../include/measurement_api/frontend.hpp)：声呐和光学前端接口。
+- [`include/measurement_api/factor_builder.hpp`](../include/measurement_api/factor_builder.hpp)：从量测结果构造残差块的接口。
+- [`include/measurement_api/residual_block.hpp`](../include/measurement_api/residual_block.hpp)：求解器使用的残差和雅可比接口。
 
 ## 核心数据概念
 
@@ -102,14 +89,11 @@ C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 P
 | `StateSnapshot` | 某一版本的估计状态 |
 | `MapEvidence` | 绑定到 keyframe/局部坐标系的局部地图数据 |
 
-除 `ResidualBlock` 外，表中的核心消息类型的唯一事实源位于
-[`schemas/proto/uw/domain/`](../schemas/proto/uw/domain/)；`ResidualBlock` 及其同类进程内
-接口位于 [`include/measurement_api/`](../include/measurement_api/)。
+除 `ResidualBlock` 外，表中的核心消息类型的唯一事实源位于 [`schemas/proto/uw/domain/`](../schemas/proto/uw/domain/)；`ResidualBlock` 及其同类进程内接口位于 [`include/measurement_api/`](../include/measurement_api/)。
 
 ## 两条主线共享的地基
 
-两条主线（离线 SLAM 管线、ROV 在线驾驶辅助）不是两套代码，而是**同一套消息模型和同一个
-事件入口**的两种事件来源（回放 vs 实时）。
+两条主线（离线 SLAM 管线、ROV 在线驾驶辅助）不是两套代码，而是**同一套消息模型和同一个事件入口**的两种事件来源（回放 vs 实时）。
 
 ### 规范消息模型（Protobuf）
 
@@ -126,13 +110,9 @@ C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 P
 | `calibration.proto` | `RigCalibrationSnapshot`（rig 配置层的解析目标） |
 | `ids.proto`/`time.proto`/`vehicle.proto`/`imu.proto`/`dvl.proto` | 标识、时间戳、`ImuSample`、`DvlSample` |
 
-C++ 侧统一经 `include/domain/domain.hpp` 使用；Python 侧由 `tools/codegen/gen_py.sh` 生成
-`schema_pb2`（不入库）。
+C++ 侧统一经 `include/domain/domain.hpp` 使用；Python 侧由 `tools/codegen/gen_py.sh` 生成 `schema_pb2`（不入库）。
 
-两条铁律写在字段层面：位姿一律 `Pose3`（平移 + xyzw 四元数，禁欧拉角）；
-`PressureDepthMeasurement.depth_m` 正向下（world Z-up，位姿 z = `-depth_m`），光学 `depth_m`
-是 optical frame 正向前——同名不同义，不可混用（见
-[坐标系与符号约定](../README.md#坐标系与符号约定)）。
+两条铁律写在字段层面：位姿一律 `Pose3`（平移 + xyzw 四元数，禁欧拉角）；`PressureDepthMeasurement.depth_m` 正向下（world Z-up，位姿 z = `-depth_m`），光学 `depth_m` 是 optical frame 正向前——同名不同义，不可混用（见 [坐标系与符号约定](../README.md#坐标系与符号约定)）。
 
 ### 规范 topic 词表与统一事件契约
 
@@ -148,61 +128,36 @@ C++ 侧统一经 `include/domain/domain.hpp` 使用；Python 侧由 `tools/codeg
 | `/evidence/map` | `MapEvidence` | 算法输入 |
 | `/gt/state` | `StateSnapshot` | **仅评测支路**（`CanonicalTopicRole::kReferenceOnly`） |
 
-`runtime/canonical_event.hpp` 把"topic + payload 变体 + capture/receive 时戳 + 序号"捆成
-`CanonicalEvent`；`runtime/event_source.hpp` 定义与来源无关的 `EventSource` 契约；
-`application/event_pump.hpp` 的 `PumpEvents(source, port)` 从任一 EventSource 取事件、按 topic
-分发到 `application/pipeline_input_port.hpp` 的 `PipelineInputPort::OnXxx(...)`。离线回放用
-MCAP EventSource，在线闭环用 `runtime/live_event_source.hpp` 的四车道有界队列，应用层代码
-两边共用。
+`runtime/canonical_event.hpp` 把"topic + payload 变体 + capture/receive 时戳 + 序号"捆成 `CanonicalEvent`；`runtime/event_source.hpp` 定义与来源无关的 `EventSource` 契约；`application/event_pump.hpp` 的 `PumpEvents(source, port)` 从任一 EventSource 取事件、按 topic 分发到 `application/pipeline_input_port.hpp` 的 `PipelineInputPort::OnXxx(...)`。离线回放用 MCAP EventSource，在线闭环用 `runtime/live_event_source.hpp` 的四车道有界队列，应用层代码两边共用。
 
-一致性由 `tests/integration/event_source_parity_test.cpp` 把关：同一批事件经 MCAP 与内存两种
-EventSource 注入，应用侧观察到的顺序必须完全一致。
+一致性由 `tests/integration/event_source_parity_test.cpp` 把关：同一批事件经 MCAP 与内存两种 EventSource 注入，应用侧观察到的顺序必须完全一致。
 
 ## 当前三条真实执行链
 
 ### 1. 声呐位姿图回放主链
 
-CLI 入口是 [`apps/replay_demo.cpp`](../apps/replay_demo.cpp)，实际用例编排位于
-[`src/application/replay_pipeline.cpp`](../src/application/replay_pipeline.cpp)：
+CLI 入口是 [`apps/replay_demo.cpp`](../apps/replay_demo.cpp)，实际用例编排位于 [`src/application/replay_pipeline.cpp`](../src/application/replay_pipeline.cpp)：
 
-1. `synth_bag_gen` 生成圆弧轨迹、相对位姿、深度、声呐帧和 ground truth，写入
-   统一 MCAP 录制格式。
+1. `synth_bag_gen` 生成圆弧轨迹、相对位姿、深度、声呐帧和 ground truth，写入统一 MCAP 录制格式。
 2. `replay_demo` 加载四层 YAML 配置。
-3. `McapEventSource` 顺序扫描一次 bag（按 `logTime` 排序），把消息拆成
-   `CanonicalEvent` 经 `PumpEvents` 分发进 `ReplayInputAccumulator`
-   （`include/application/replay_input_accumulator.hpp`）——关键帧身份来自
-   wire 里的 `ObservationId`/`source_observations`，不是时间反推；这一步产出
-   下面第 4 步开始要用的 `ReplayInputData`。
-4. 从 `ReplayInputData` 中取出相对位姿量测结果，建立 keyframe 和初始里程计
-   轨迹——具体怎么拿到这份量测结果取决于历史字段名 `estimator_mode`（见下），
-   不是选择估计求解器。
+3. `McapEventSource` 顺序扫描一次 bag（按 `logTime` 排序），把消息拆成 `CanonicalEvent` 经 `PumpEvents` 分发进 `ReplayInputAccumulator` （`include/application/replay_input_accumulator.hpp`）——关键帧身份来自 wire 里的 `ObservationId`/`source_observations`，不是时间反推；这一步产出下面第 4 步开始要用的 `ReplayInputData`。
+4. 从 `ReplayInputData` 中取出相对位姿量测结果，建立 keyframe 和初始里程计轨迹——具体怎么拿到这份量测结果取决于历史字段名 `estimator_mode`（见下），不是选择估计求解器。
 5. 原始 `SonarFrame` 经 `CFAR → 极坐标转换 → DBSCAN`，得到声呐候选。
-6. `SubmapManager`（按 keyframe 索引的局部地图数据存储，不是完整的 submap 生命周期
-   管理器）做最近邻地标关联，再生成声呐距离因子。
+6. `SubmapManager`（按 keyframe 索引的局部地图数据存储，不是完整的 submap 生命周期管理器）做最近邻地标关联，再生成声呐距离因子。
 7. 深度量测结果生成绝对 Z 方向因子。
 8. 相对位姿、声呐距离、深度残差一起进入 `PoseGraphProblem`。
 9. Gauss-Newton/LM 优化所有非固定 keyframe。
 10. 优化结果写入 `StateStore`，更新地图位姿，并计算 ATE。
 11. 输出 TUM 轨迹和 RunManifest。
 
-`estimator_mode` 是保留兼容性的历史字段名，决定第 4 步怎么拿到相对位姿证据，而不是
-选择求解器；两条路径最终使用同一个 `GaussNewtonSolver`。`frontends.landmark_detector`
-还会选择 blob/Harris 检测器。sonar/optical frontend 当前各只有一个实现；`map_backend`
-是预留的地图实现选择字段，目前只支持 `submap_point_cloud_v1`，未知标识符会 fail-fast：
+`estimator_mode` 是保留兼容性的历史字段名，决定第 4 步怎么拿到相对位姿证据，而不是选择求解器；两条路径最终使用同一个 `GaussNewtonSolver`。`frontends.landmark_detector` 还会选择 blob/Harris 检测器。sonar/optical frontend 当前各只有一个实现；`map_backend` 是预留的地图实现选择字段，目前只支持 `submap_point_cloud_v1`，未知标识符会 fail-fast：
 
-`stereo_landmark_vo` 仅在已加载的 rig 含相机时使用；否则 `replay_demo` 会像
-`black_box_vio` 一样回退读取 `/evidence/relative_pose`。配置校验不会拒绝这个无相机的组合。
+`stereo_landmark_vo` 仅在已加载的 rig 含相机时使用；否则 `replay_demo` 会像 `black_box_vio` 一样回退读取 `/evidence/relative_pose`。配置校验不会拒绝这个无相机的组合。
 
-- `black_box_vio`（默认，`configs/experiment/synthetic_smoke.yaml`）：直接读取
-  `synth_bag_gen` 写进 bag 的 ground-truth+noise 相对位姿证据，是占位的
-  "black-box VIO" 桩，不是真实的视觉里程计。
-- `stereo_landmark_vo`（`configs/experiment/synthetic_smoke_vo.yaml`）：改由
-  [`StereoLandmarkVoFrontend`](../include/frontends/stereo_landmark_vo_frontend.hpp)
-  从左右相机帧实时计算——角点/blob 检测 + NCC 匹配 + RANSAC 刚体拟合出帧间相对
-  位姿，是真实的视觉里程计（仍不融合 IMU，是 VO 不是 VIO）。
+- `black_box_vio`（默认，`configs/experiment/synthetic_smoke.yaml`）：直接读取 `synth_bag_gen` 写进 bag 的 ground-truth+noise 相对位姿证据，是占位的 "black-box VIO" 桩，不是真实的视觉里程计。
+- `stereo_landmark_vo`（`configs/experiment/synthetic_smoke_vo.yaml`）：改由 [`StereoLandmarkVoFrontend`](../include/frontends/stereo_landmark_vo_frontend.hpp) 从左右相机帧实时计算——角点/blob 检测 + NCC 匹配 + RANSAC 刚体拟合出帧间相对位姿，是真实的视觉里程计（仍不融合 IMU，是 VO 不是 VIO）。
 
-两条路径在合成场景下收敛的 ATE 量级相近（约 0.06m），验证方法见
-[测试与验证指南](./testing-and-verification-guide-2026-08-20.md)。
+两条路径在合成场景下收敛的 ATE 量级相近（RNG 拆流后约 0.08–0.10 m，README「运行端到端 Demo」为当前权威数字），验证方法见 [测试与验证指南](./testing-and-verification-guide-2026-08-20.md)。
 
 对应的主调用链是：
 
@@ -219,20 +174,11 @@ synth_bag_gen
  → ATE + trajectory + RunManifest
 ```
 
-这仍是一条批处理验证链，不是在线消息循环——但输入阶段已经不是"按 topic 多次
-扫描 MCAP"了：`McapEventSource` 只顺序扫描 bag 一次，按 `logTime` 排序把消息
-拆成 `CanonicalEvent`，`PumpEvents` 分发进 `PipelineInputPort`
-（`replay_demo` 用 `ReplayInputAccumulator` 实现）。这条 `EventSource`/
-`PipelineInputPort` 接口本身与来源无关——MCAP 回放和未来的供应商 SDK live
-source 都能喂给同一个 `PipelineInputPort`，但**有界调度、Start/Stop/Drain
-生命周期、真正的在线消息循环仍未实现**（下一实施包起点：供应商 SDK
-`EventSource` + runtime hardening），不要把"输入主链已统一"误读成"在线
-模式已经存在"。
+这仍是一条批处理验证链，不是在线消息循环——但输入阶段已经不是"按 topic 多次扫描 MCAP"了：`McapEventSource` 只顺序扫描 bag 一次，按 `logTime` 排序把消息拆成 `CanonicalEvent`，`PumpEvents` 分发进 `PipelineInputPort` （`replay_demo` 用 `ReplayInputAccumulator` 实现）。这条 `EventSource`/ `PipelineInputPort` 接口本身与来源无关——MCAP 回放和未来的供应商 SDK live source 都能喂给同一个 `PipelineInputPort`，但**有界调度、Start/Stop/Drain 生命周期、真正的在线消息循环仍未实现**（下一实施包起点：供应商 SDK `EventSource` + runtime hardening），不要把"输入主链已统一"误读成"在线模式已经存在"。
 
 ### 2. 声光深度融合链
 
-入口是
-[`apps/acoustic_optic_scenario_matrix.cpp`](../apps/acoustic_optic_scenario_matrix.cpp)：
+入口是 [`apps/acoustic_optic_scenario_matrix.cpp`](../apps/acoustic_optic_scenario_matrix.cpp)：
 
 ```text
 9 类合成退化场景
@@ -246,12 +192,9 @@ source 都能喂给同一个 `PipelineInputPort`，但**有界调度、Start/Sto
  → 深度/误融合率/延迟指标
 ```
 
-融合采用“无法证明一致就不融合”的策略：整张深度图默认保留光学结果，只有通过
-几何关联、方差改善和残差门限的像素才升级为声光融合结果。核心实现见
-[`acoustic_optic_depth_fusion_frontend.cpp`](../src/frontends/acoustic_optic_depth_fusion_frontend.cpp)。
+融合采用“无法证明一致就不融合”的策略：整张深度图默认保留光学结果，只有通过几何关联、方差改善和残差门限的像素才升级为声光融合结果。核心实现见 [`acoustic_optic_depth_fusion_frontend.cpp`](../src/frontends/acoustic_optic_depth_fusion_frontend.cpp)。
 
-`AcousticOpticDepthFusionFrontend` 是声光融合模块；它位于 `frontends` 路径只是保留的
-历史命名，不表示它只是单模态前端。主要组件包括：
+`AcousticOpticDepthFusionFrontend` 是声光融合模块；它位于 `frontends` 路径只是保留的历史命名，不表示它只是单模态前端。主要组件包括：
 
 | 阶段 | 实现 |
 |---|---|
@@ -263,22 +206,13 @@ source 都能喂给同一个 `PipelineInputPort`，但**有界调度、Start/Sto
 | 深度和误融合评测 | `include/evaluation/depth_metrics.hpp`、`include/evaluation/fusion_metrics.hpp` |
 | 点云地图评测原语 | `include/evaluation/map_metrics.hpp`（Chamfer/completeness/outlier/F-score；暴力最近邻，尚未接回放） |
 
-最新的
-[`acoustic_optic_map_bridge`](../include/mapping/acoustic_optic_map_bridge.hpp)
-会进一步把融合深度转换成 `base_link` 局部点云。局部证据不会提前烘焙到世界坐标，
-因此位姿图修正后，`SubmapManager` 可以使用最新 keyframe 位姿重新计算世界点。
+最新的 [`acoustic_optic_map_bridge`](../include/mapping/acoustic_optic_map_bridge.hpp) 会进一步把融合深度转换成 `base_link` 局部点云。局部证据不会提前烘焙到世界坐标，因此位姿图修正后，`SubmapManager` 可以使用最新 keyframe 位姿重新计算世界点。
 
-`replay_demo` 在带相机 rig 下会并行运行这条声光链，并把融合点云交给
-`SubmapManager`；它仍不把稠密深度作为位姿图因子，所以不会改变定位优化。九场景矩阵
-的 CTest 同时检查确定性与最低有效覆盖：除明确设计为 fail-closed/回退的故障场景外，
-0 accepted 会使测试失败；质量收益和墙钟延迟 gate 仍是 opt-in。
+`replay_demo` 在带相机 rig 下会并行运行这条声光链，并把融合点云交给 `SubmapManager`；它仍不把稠密深度作为位姿图因子，所以不会改变定位优化。九场景矩阵的 CTest 同时检查确定性与最低有效覆盖：除明确设计为 fail-closed/回退的故障场景外，0 accepted 会使测试失败；质量收益和墙钟延迟 gate 仍是 opt-in。
 
 ### 3. 真实 HoloOcean 离线 VO 链
 
-`adapters/holoocean/uw_holoocean_adapter/record_session.py` 已在原生 Windows
-HoloOcean 2.3.0 上生成过统一 MCAP 录制格式。`configs/experiment/real_holoocean_vo.yaml`
-选择真实相机 rig、Harris 角点和 `stereo_landmark_vo`，由 `replay_demo --align-ate`
-消费录制的 RGB 双目图像：
+`adapters/holoocean/uw_holoocean_adapter/record_session.py` 已在原生 Windows HoloOcean 2.3.0 上生成过统一 MCAP 录制格式。`configs/experiment/real_holoocean_vo.yaml` 选择真实相机 rig、Harris 角点和 `stereo_landmark_vo`，由 `replay_demo --align-ate` 消费录制的 RGB 双目图像：
 
 ```text
 真实 HoloOcean 双目 + GT + depth
@@ -289,9 +223,7 @@ HoloOcean 2.3.0 上生成过统一 MCAP 录制格式。`configs/experiment/real_
  → 位姿图 + 对齐 ATE
 ```
 
-审计样本约 76 MB、50 个 keyframe，不含声呐/IMU/DVL；对齐 ATE RMSE 为
-`0.5596 m`，求解器 30 次迭代后 `stalled`，稠密地图为空。因此它证明了“真实录制能
-进入离线 VO”，没有证明真实声光融合已达到生产精度。
+审计样本约 76 MB、50 个 keyframe，不含声呐/IMU/DVL；对齐 ATE RMSE 为 `0.5596 m`，求解器 30 次迭代后 `stalled`，稠密地图为空。因此它证明了“真实录制能进入离线 VO”，没有证明真实声光融合已达到生产精度。
 
 ## 配置、适配器与外部系统
 
@@ -308,16 +240,11 @@ defaults → rig → scenario → experiment → 显式 CLI 参数
 - `scenario/`：轨迹、场景退化、故障和随机 seed。
 - `experiment/`：算法选择、地图后端和输出策略。
 
-解析入口是 [`src/runtime/config.cpp`](../src/runtime/config.cpp)，字段说明见
-[`configs/README.md`](../configs/README.md)。
+解析入口是 [`src/runtime/config.cpp`](../src/runtime/config.cpp)，字段说明见 [`configs/README.md`](../configs/README.md)。
 
 ### 外部接入
 
-- `adapters/holoocean`：Python HoloOcean 网关、坐标转换和统一 MCAP 录制格式写入。
-  Python 写出的 bag 可以直接由 C++ `replay_demo` 读取；`record_session.py` 是
-  `synth_bag_gen` 的真实会话对应物，把一次真实 HoloOcean 录制转换成同样的
-  统一 MCAP 录制格式。项目已在原生 Windows 仿真器上录制并离线回放过一份双目 bag；当前
-  Linux 开发机没有 HoloOcean/UE5，实时可靠性仍未自动回归。
+- `adapters/holoocean`：Python HoloOcean 网关、坐标转换和统一 MCAP 录制格式写入。Python 写出的 bag 可以直接由 C++ `replay_demo` 读取；`record_session.py` 是 `synth_bag_gen` 的真实会话对应物，把一次真实 HoloOcean 录制转换成同样的统一 MCAP 录制格式。项目已在原生 Windows 仿真器上录制并离线回放过一份双目 bag；当前 Linux 开发机没有 HoloOcean/UE5，实时可靠性仍未自动回归。
 - `external_repos`：只读参考和移植来源，不应直接修改。
 
 ## 新人 60–90 分钟上手路径
@@ -329,8 +256,7 @@ tools/verify_pipeline.sh --out-dir /tmp/uw_slam_onboarding
 cat /tmp/uw_slam_onboarding/summary.txt
 ```
 
-2026-08-22 当前工作树实跑为 136/136 CTest、35/35 Python，默认回放 ATE RMSE
-`0.0665821 m`；数字会随模块增加而变化，以本次 `summary.txt` 为准。
+2026-08-22 历史实跑为 136/136 CTest、35/35 Python；当前数字（含 RNG 拆流后的 ATE 基线 0.08–0.10 m）会随模块增加而变化，以本次 `summary.txt` 为准。
 
 除测试结果外，重点查看：
 
@@ -407,7 +333,7 @@ scenario_matrix/main.cpp
 | 修改核心消息字段 | `schemas/proto/`、`include/domain` | `contract.*` tests |
 | 修改声呐检测 | `include/frontends/sonar_cfar_frontend.hpp` | `unit.frontends.SonarCfarFrontend*` |
 | 修改相对位姿视觉里程计（VO） | `include/frontends/stereo_landmark_vo_frontend.hpp` | `unit.frontends.StereoLandmarkVoFrontend*`，端到端见 `configs/experiment/synthetic_smoke_vo.yaml` |
-| 修改相机去畸变 | `include/sensor_models/camera_rectifier.hpp` | `unit.core.PlumbBobDistortionTest.*`、`unit.core.UndistortImageTest.*`；尚未接入回放 |
+| 修改相机去畸变 | `include/sensor_models/camera_rectifier.hpp` | `unit.core.PlumbBobDistortionTest.*`；`UndistortImage` 原语已移除，`replay_demo` 走 `opencv_adapters` 的一般双目 rectification |
 | 修改因子数学 | `include/factor_builders/`、`src/factor_builders/` | 残差和雅可比测试（`unit.factor_builders.*`） |
 | 修改求解器 | `include/estimation`、`src/estimation` | `unit.estimation.*` |
 | 修改声光融合 | associator、depth fusion（均在 `include/frontends`、`src/frontends`） | 对应 `unit.frontends.*`、scenario matrix |
@@ -419,23 +345,14 @@ scenario_matrix/main.cpp
 
 ## 当前容易误解的边界
 
-- `frontends.landmark_detector` 会真正选择检测器；上文的 `estimator_mode` 和
-  `map_backend` 说明也不代表已有动态插件或第二后端。
+- `frontends.landmark_detector` 会真正选择检测器；上文的 `estimator_mode` 和 `map_backend` 说明也不代表已有动态插件或第二后端。
 - 位姿图只优化 keyframe 位姿，不联合优化地标。
 - 声呐消费者主要使用每帧 top-1 候选。
-- `McapEventSource`/`PipelineInputPort`/`PumpEvents`（`include/runtime/event_source.hpp`、
-  `include/application/pipeline_input_port.hpp`）统一了 MCAP 回放的输入读取方式，
-  并且这套接口本身与来源无关；但这只是"输入主链"这一层——供应商 SDK 的
-  `EventSource` 实现、有界队列/背压调度、Start/Stop/Drain 生命周期、真正的
-  在线消息循环都还不存在，不要把它读成"在线/实时模式已经接通"。
-- 声光组件和场景矩阵已经能够端到端运行，`replay_demo` 也会生成融合局部地图数据；
-  但稠密声光结果不参与位姿图优化。
-- `camera_rectifier` 是已测试但未接线的有限 plumb-bob 去畸变原语，只适用于当前平行
-  双目假设，不是通用离轴极线校正；直接用于现有真实 bag 会降低纹理和 VO 跟踪率。
-- `map_metrics` 已定义点云 Chamfer/completeness/outlier/F-score，但还是
-  `O(NM)` 暴力最近邻的小点集原语，没有接入 replay、真实 reference map 或质量门禁。
-- 根 README 的测试数量可能落后于当前构建；测试数量和状态应以 `ctest --test-dir build -N`
-  以及实际测试输出为准。
+- `McapEventSource`/`PipelineInputPort`/`PumpEvents`（`include/runtime/event_source.hpp`、`include/application/pipeline_input_port.hpp`）统一了 MCAP 回放的输入读取方式，并且这套接口本身与来源无关；但这只是"输入主链"这一层——供应商 SDK 的 `EventSource` 实现、有界队列/背压调度、Start/Stop/Drain 生命周期、真正的在线消息循环都还不存在，不要把它读成"在线/实时模式已经接通"。
+- 声光组件和场景矩阵已经能够端到端运行，`replay_demo` 也会生成融合局部地图数据；但稠密声光结果不参与位姿图优化。
+- `camera_rectifier` 是已测试但未接线的有限 plumb-bob 去畸变原语，只适用于当前平行双目假设，不是通用离轴极线校正；直接用于现有真实 bag 会降低纹理和 VO 跟踪率。
+- `map_metrics` 已定义点云 Chamfer/completeness/outlier/F-score，但还是 `O(NM)` 暴力最近邻的小点集原语，没有接入 replay、真实 reference map 或质量门禁。
+- 根 README 的测试数量可能落后于当前构建；测试数量和状态应以 `ctest --test-dir build -N` 以及实际测试输出为准。
 - 遇到文档与代码状态的信息冲突时，应按以下顺序判断：
 
 ```text

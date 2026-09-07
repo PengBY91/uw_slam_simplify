@@ -1,21 +1,14 @@
 # CLAUDE.md
 
-在 `uw_slam/` 里工作时的约定和背景速览。完整背景见 `README.md` 和延伸阅读里的两份
-架构文档；这里只记那些"读代码读不出来、但会影响你怎么改代码"的东西。
+在 `uw_slam/` 里工作时的约定和背景速览。完整背景见 `README.md` 和延伸阅读里的两份架构文档；这里只记那些"读代码读不出来、但会影响你怎么改代码"的东西。
 
 ## 这个仓库是什么
 
-水下声光融合 SLAM 平台的长期代码框架，是架构文档
-(`docs/acoustic-optic-slam-platform-architecture-2026-08-17.md`) 的代码落地。**不是**在
-`ocean_t`/`SVIn`/`sonar_camera_reconstruction` 上小修小补，是独立重建的新仓库，
-允许把后两者的具体实现移植进来（已经移植了两处，见下）。当前是"骨架 + 每层至少
-一条真实可跑的端到端链路"阶段，不是生产系统。
+水下声光融合 SLAM 平台的长期代码框架，是架构文档 (`docs/acoustic-optic-slam-platform-architecture-2026-08-17.md`) 的代码落地。**不是**在 `ocean_t`/`SVIn`/`sonar_camera_reconstruction` 上小修小补，是独立重建的新仓库，允许把后两者的具体实现移植进来（已经移植了两处，见下）。当前是"骨架 + 每层至少一条真实可跑的端到端链路"阶段，不是生产系统。
 
 仓库现在只有一条主线：
 
-1. **离线 SLAM 管线**（`synth_bag_gen`/`replay_demo`，成熟度最高）：声光前端 →
-   因子图（GN/LM 默认、Ceres 候选、可选回环闭合）→ 轨迹/地图/评测。传感器数据
-   （相机/声呐/IMU/深度）来自合成生成或 `adapters/holoocean` 的 HoloOcean 仿真录制。
+1. **离线 SLAM 管线**（`synth_bag_gen`/`replay_demo`，成熟度最高）：声光前端 → 因子图（GN/LM、可选回环闭合）→ 轨迹/地图/评测。传感器数据（相机/声呐/IMU/深度）来自合成生成或 `adapters/holoocean` 的 HoloOcean 仿真录制。
 
 > 历史注记：仓库曾有第二条主线（ROV 实时驾驶辅助/闭环），2026-09 整体剥离以聚焦
 > 声光融合 SLAM 本体；完整快照在 `archive/rov-realtime-line2` 分支，需要时从那里
@@ -23,45 +16,13 @@
 
 ## 硬性规则
 
-- **不要修改 `external_repos/` 下的任何子目录**（`SVIn/`、`sonar_camera_
-  reconstruction/`、`ocean_t/`，以及后来加入的 `holoocean-ros/`——HoloOcean 官方
-  ROS2 接口包，含 `holoocean_main`/`holoocean_interfaces`/`holoocean_examples`——
-  和 `holoocean_bridge/`——一个同事的 HoloOcean→ROS2 桥接包，供
-  `sonar_camera_reconstruction_baseline`/`svin_bridge` 的 README 引用为参考）。
-  它们是只读的参考/移植来源，各自有自己的来源，整个 `external_repos/` 已被
-  `.gitignore` 排除在本仓库版本控制之外。（`holoocean-ros/`——HoloOcean 官方
-  ROS2 接口包——和 `holoocean_bridge/` 曾是主线二 ROS2 消费链的参考/接入来源，
-  主线二剥离后本仓库已不再消费它们，但目录仍在磁盘上，规则照旧不碰。）
-- **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation,
-  mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`，
-  OpenCV 隔离在 `adapters/opencv/`（lint 角色名
-  `opencv_adapters`，注意它的源码直接住在 `adapters/opencv/{include,src}` 而不是顶层
-  `include/`/`src/`），Ceres 在 `adapters/ceres/`，nanoflann 在
-  `adapters/spatial_index/`；`apps/` 只做参数解析和进程入口，用例编排放在
-  `application`。`include/`、`src/` 下任何生产代码都不能 include HoloOcean/
-  OpenCV/Ceres/第三方 vendor 头，也不能再用旧的 `uw/...` 手写头路径——这是
-  `tools/lint/check_layer_dependencies.py`（`tools/lint/check_no_ros_in_core.sh`
-  是它的兼容入口）强制检查的不变量，改完代码顺手跑一下。`estimation`/`mapping`
-  层见到的求解器/空间索引都是纯虚接口（`Solver`、`SurfelSpatialIndex`），具体第三方
-  实现在 adapters 层、由 `application` 注入——给这两层加功能时保持这个方向。
-- **移植第三方代码前先读 `NOTICE`**。仓库整体是 GPLv3（因为移植了 SVIn 的 GPLv3
-  代码），移植文件必须保留原始版权头，新移植内容要在 `NOTICE` 里补一节说明来源、
-  移植了什么、刻意没移植什么。目前已移植两处：
-  - `include/factor_builders/sonar_range_residual.hpp` +
-    `src/factor_builders/sonar_range_residual.cpp`：残差公式来自 SVIn 的
-    `SonarError`，但雅可比是**独立重新推导的**——上游雅可比和自己的残差在数学上
-    不自洽，直接抄会引入错误。
-  - `include/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.hpp` +
-    `src/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.cpp`：CFAR +
-    极坐标转换 + DBSCAN 来自 `sonar_camera_reconstruction`，但**没有**移植它
-    `merge.py` 里丢弃 pitch、直接烘焙到 `map` frame 的部分——前端只应输出声呐
-    局部坐标系下的证据，不应该自己决定全局位姿。
-- **除非用户明确要求，不要 `git commit`**。保留用户已有改动；提交、变基、清理
-  工作树都必须在授权范围内进行。
-- Protobuf（`schemas/proto/`）是跨语言规范化消息模型的唯一来源。需要新增跨语言
-  规范化消息字段时改
-  `.proto`，不要在 C++/Python 任一侧另建一套平行 struct 去绕过它——`rig` 配置层
-  直接解析进 `RigCalibrationSnapshot` protobuf 消息就是照这个原则做的。
+- **不要修改 `external_repos/` 下的任何子目录**（`SVIn/`、`sonar_camera_reconstruction/`、`ocean_t/`，以及后来加入的 `holoocean-ros/`——HoloOcean 官方 ROS2 接口包，含 `holoocean_main`/`holoocean_interfaces`/`holoocean_examples`——和 `holoocean_bridge/`——一个同事的 HoloOcean→ROS2 桥接包，供 `sonar_camera_reconstruction_baseline`/`svin_bridge` 的 README 引用为参考）。它们是只读的参考/移植来源，各自有自己的来源，整个 `external_repos/` 已被 `.gitignore` 排除在本仓库版本控制之外。（`holoocean-ros/`——HoloOcean 官方 ROS2 接口包——和 `holoocean_bridge/` 曾是主线二 ROS2 消费链的参考/接入来源，主线二剥离后本仓库已不再消费它们，但目录仍在磁盘上，规则照旧不碰。）
+- **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation, mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`，OpenCV 隔离在 `adapters/opencv/`（lint 角色名 `opencv_adapters`，注意它的源码直接住在 `adapters/opencv/{include,src}` 而不是顶层 `include/`/`src/`），nanoflann 在 `adapters/spatial_index/`；`apps/` 只做参数解析和进程入口，用例编排放在 `application`。`include/`、`src/` 下任何生产代码都不能 include HoloOcean/OpenCV/第三方 vendor 头，也不能再用旧的 `uw/...` 手写头路径——这是 `tools/lint/check_layer_dependencies.py`（`tools/lint/check_no_ros_in_core.sh` 是它的兼容入口）强制检查的不变量，改完代码顺手跑一下。`estimation`/`mapping` 层见到的求解器/空间索引都是纯虚接口（`Solver`、`SurfelSpatialIndex`），具体第三方实现在 adapters 层、由 `application` 注入——给这两层加功能时保持这个方向。
+- **移植第三方代码前先读 `NOTICE`**。仓库整体是 GPLv3（因为移植了 SVIn 的 GPLv3 代码），移植文件必须保留原始版权头，新移植内容要在 `NOTICE` 里补一节说明来源、移植了什么、刻意没移植什么。目前已移植两处：
+- `include/factor_builders/sonar_range_residual.hpp` + `src/factor_builders/sonar_range_residual.cpp`：残差公式来自 SVIn 的 `SonarError`，但雅可比是**独立重新推导的**——上游雅可比和自己的残差在数学上不自洽，直接抄会引入错误。
+- `include/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.hpp` + `src/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.cpp`：CFAR + 极坐标转换 + DBSCAN 来自 `sonar_camera_reconstruction`，但**没有**移植它 `merge.py` 里丢弃 pitch、直接烘焙到 `map` frame 的部分——前端只应输出声呐局部坐标系下的证据，不应该自己决定全局位姿。
+- **除非用户明确要求，不要 `git commit`**。保留用户已有改动；提交、变基、清理工作树都必须在授权范围内进行。
+- Protobuf（`schemas/proto/`）是跨语言规范化消息模型的唯一来源。需要新增跨语言规范化消息字段时改 `.proto`，不要在 C++/Python 任一侧另建一套平行 struct 去绕过它——`rig` 配置层直接解析进 `RigCalibrationSnapshot` protobuf 消息就是照这个原则做的。
 
 ## 构建与测试
 
@@ -78,13 +39,9 @@ ctest --test-dir build --output-on-failure   # 用例数随代码变化，以实
 tools/lint/check_no_ros_in_core.sh           # 依赖不变量检查（兼容入口，实际跑 tools/lint/check_layer_dependencies.py）
 ```
 
-可选构建开关：`-DUW_BUILD_CERES_SOLVER=ON`
-（Ceres 求解器适配器，依赖较重所以默认关）、`-DUW_SANITIZER=address|thread`、
-`-DUW_COVERAGE=ON`。
+可选构建开关：`-DUW_SANITIZER=address|thread`、`-DUW_COVERAGE=ON`。
 
-改完代码后按这个顺序验证：编译 → C++ 测试 → Python 测试（如果碰了 `adapters/
-holoocean/`）→ lint。**端到端 demo 也值得实际跑一遍**，不要只信单元测试——下面
-「已经踩过的坑」里那个 z 轴 anchor bug就是单元测试全绿、但实跑 demo 才发现的。
+改完代码后按这个顺序验证：编译 → C++ 测试 → Python 测试（如果碰了 `adapters/holoocean/`）→ lint。**端到端 demo 也值得实际跑一遍**，不要只信单元测试——下面「已经踩过的坑」里那个 z 轴 anchor bug就是单元测试全绿、但实跑 demo 才发现的。
 
 ```bash
 build/bin/synth_bag_gen --experiment configs/experiment/synthetic_smoke.yaml --out /tmp/synthetic.mcap
@@ -105,8 +62,7 @@ build/bin/replay_demo --bag /tmp/loop.mcap --experiment configs/experiment/synth
 # v1 位姿邻近检索的边界，不是回归；见 synthetic_loop_closure_vo_enabled.yaml 头注释。
 ```
 
-`integration.acoustic_optic_scenario_matrix_determinism` 不只比较同 seed 输出：它也保留
-矩阵程序第一次运行的退出码，因此最低有效覆盖 gate 失败会让 CTest 失败。可单独运行：
+`integration.acoustic_optic_scenario_matrix_determinism` 不只比较同 seed 输出：它也保留矩阵程序第一次运行的退出码，因此最低有效覆盖 gate 失败会让 CTest 失败。可单独运行：
 
 ```bash
 ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism --output-on-failure
@@ -114,157 +70,37 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
 
 ## 代码约定
 
-- 位姿统一用 `Pose3`（平移 + 四元数 xyzw），C++ (`uw::sensor_models::Pose3`) 和
-  Python (`uw_holoocean_adapter.coordinates.Pose`) 两边一致。**不要引入欧拉角**
-  ——之前 `ocean_t` 用欧拉角是被审计出来的具体问题（万向锁风险），新代码刻意避开。
-- 随机数用显式传入的、有 seed 的 RNG，一路传到调用点；**不要用全局
-  `np.random.seed()` 或在运行中途重新 seed**——这是从 `ocean_t` 审计里改掉的模式，
-  也是确定性回放测试 (`tests/integration/determinism_test.sh`) 实际在把关的东西。
-- 新增一个 frontend/factor_builder，头文件放 `include/frontends/`（或
-  `include/factor_builders/`）、实现放 `src/frontends/`（或 `src/factor_builders/`）、
-  测试放 `tests/frontends/`（或 `tests/factor_builders/`），并把新增的 `.cpp`/测试
-  `.cpp` 加进 `cmake/Libraries.cmake`/`cmake/Tests.cmake` 里对应 target 的源文件
-  列表——这两个 target 是按架构层合并的（所有 frontend 共用 `frontends` target，
-  所有 factor builder 共用 `factor_builders` target），不要为新实现单独建
-  target 或 `CMakeLists.txt`，也不要改动其他已有实现的代码或接口。
-- 求解器（`include/estimation`/`src/estimation`）默认是 Eigen 手写的
-  Gauss-Newton/LM（`gauss_newton_v1`）。`adapters/ceres/` 的 `ceres_v1` 适配器
-  已经实现、可经 `estimation.solver` 切换（需 `-DUW_BUILD_CERES_SOLVER=ON` 编译），
-  但**默认值仍未换**——"该不该换默认"是架构文档第 20 节明确记录的延后决策，要靠
-  `tools/bench/solver_benchmark.sh` 的实测数据关闭，不要因为"手写的不够好"就顺手
-  切默认或重构成别的库，除非用户明确要这么做。
-- YAML 配置分层（`defaults → rig → scenario → experiment`，见
-  `include/runtime/config.hpp`）：`experiment/*.yaml` 里的 `rig`/
-  `scenario`/`defaults` 三个 key 是相对 `configs/` 目录（不是相对 experiment 文件
-  自己所在目录）写的路径，加新 experiment 文件时注意这一点。
-- `PressureDepthMeasurement.depth_m` 是**正向下**的水深量；仓库 world/body frame 是
-  Z-up，所以位姿 z 使用 `-depth_m`。`OpticalDepthPriorMeasurement`、
-  `FusedDepthMeasurement` 和关联记录中的 `depth_m` 则是相机 optical frame 的
-  **正向前**距离。字段同名但坐标与符号语义不同，不要直接混用。两条约定画在同一张
-  图上：`docs/frames-and-sign-conventions.svg`（README「坐标系与符号约定」一节引用）。
-- `ValidateExperimentConfigSelections()` 会拒绝未知的 frontend/map backend/estimator/
-  detector/solver 标识符。真正驱动分支的选择器有三个：`estimator_mode`
-  （相对位姿来源）、`frontends.landmark_detector`（VO 检测器双模）、
-  `estimation.solver`（GN vs Ceres）。sonar/optical frontend 与 map backend 当前
-  只有一个被接受的实现，fail-fast 不等于已有多后端切换——`SurfelMap` 虽然存在
-  （声光地图桥在用），但它不是 `map_backend` 的第二个可选值。
-- 回环闭合（`frontends/loop_closure_frontend.hpp`）由 `defaults` 层
-  `loop_closure.enabled` 控制、默认关，要求 `estimator_mode: stereo_landmark_vo` +
-  带 rig 相机。它**固定用 HarrisCornerDetector**（真实图像假设），跟
-  `synth_bag_gen` 给 bright_blob 调的合成高亮图案不是一套外观假设——放宽
-  `candidate_search_radius_m` 在合成场景上会把错误匹配放进来、ATE 反而恶化，这是
-  v1 默认值刻意保守的原因，不要当 bug 修。
+- 位姿统一用 `Pose3`（平移 + 四元数 xyzw），C++ (`uw::sensor_models::Pose3`) 和 Python (`uw_holoocean_adapter.coordinates.Pose`) 两边一致。**不要引入欧拉角** ——之前 `ocean_t` 用欧拉角是被审计出来的具体问题（万向锁风险），新代码刻意避开。
+- 随机数用显式传入的、有 seed 的 RNG，一路传到调用点；**不要用全局 `np.random.seed()` 或在运行中途重新 seed**——这是从 `ocean_t` 审计里改掉的模式，也是确定性回放测试 (`tests/integration/determinism_test.sh`) 实际在把关的东西。
+- 新增一个 frontend/factor_builder，头文件放 `include/frontends/`（或 `include/factor_builders/`）、实现放 `src/frontends/`（或 `src/factor_builders/`）、测试放 `tests/frontends/`（或 `tests/factor_builders/`），并把新增的 `.cpp`/测试 `.cpp` 加进 `cmake/Libraries.cmake`/`cmake/Tests.cmake` 里对应 target 的源文件列表——这两个 target 是按架构层合并的（所有 frontend 共用 `frontends` target，所有 factor builder 共用 `factor_builders` target），不要为新实现单独建 target 或 `CMakeLists.txt`，也不要改动其他已有实现的代码或接口。
+- 求解器（`include/estimation`/`src/estimation`）是 Eigen 手写的 Gauss-Newton/LM（`gauss_newton_v1`，唯一受支持值）。Ceres 适配器与 `tools/bench/solver_benchmark.sh` 基准脚本已随 2026-09 精简移除（快照在 `archive/rov-realtime-line2` 分支）；要引入第三方求解器时先恢复适配器或走 adapters 层注入的新实现，不要在 `estimation` 层直接 include 第三方头。
+- YAML 配置分层（`defaults → rig → scenario → experiment`，见 `include/runtime/config.hpp`）：`experiment/*.yaml` 里的 `rig`/ `scenario`/`defaults` 三个 key 是相对 `configs/` 目录（不是相对 experiment 文件自己所在目录）写的路径，加新 experiment 文件时注意这一点。
+- `PressureDepthMeasurement.depth_m` 是**正向下**的水深量；仓库 world/body frame 是 Z-up，所以位姿 z 使用 `-depth_m`。`OpticalDepthPriorMeasurement`、`FusedDepthMeasurement` 和关联记录中的 `depth_m` 则是相机 optical frame 的 **正向前**距离。字段同名但坐标与符号语义不同，不要直接混用。两条约定画在同一张图上：`docs/frames-and-sign-conventions.svg`（README「坐标系与符号约定」一节引用）。
+- `ValidateExperimentConfigSelections()` 会拒绝未知的 frontend/map backend/estimator/ detector/solver 标识符。真正驱动分支的选择器有三个：`estimator_mode` （相对位姿来源）、`frontends.landmark_detector`（VO 检测器双模）、`frontends.landmark_detector`（VO 检测器双模）。sonar/optical frontend 与 map backend 当前只有一个被接受的实现，fail-fast 不等于已有多后端切换——`SurfelMap` 虽然存在（声光地图桥在用），但它不是 `map_backend` 的第二个可选值。
+- 回环闭合（`frontends/loop_closure_frontend.hpp`）由 `defaults` 层 `loop_closure.enabled` 控制、默认关，要求 `estimator_mode: stereo_landmark_vo` + 带 rig 相机。它**固定用 HarrisCornerDetector**（真实图像假设），跟 `synth_bag_gen` 给 bright_blob 调的合成高亮图案不是一套外观假设——放宽 `candidate_search_radius_m` 在合成场景上会把错误匹配放进来、ATE 反而恶化，这是 v1 默认值刻意保守的原因，不要当 bug 修。
 
 ## 已经踩过的坑（省得重新踩一遍)
 
-- **GCC 对同一个类里"嵌套 struct 做默认参数"处理有 bug**：`const Options& options
-  = {}` 若 `Options` 嵌套在同一个类里会编译失败。解决方式是把这类 options/summary
-  struct 提到 namespace scope（见 `GaussNewtonOptions`/`GaussNewtonSummary`），不要
-  再往类里塞嵌套 struct 当默认参数类型。
-- **`protobuf::libprotobuf` 的 `INTERFACE_LINK_LIBRARIES` 不会自动透传 absl 符号**
-  ——静态库链接会报 "DSO missing from command line"。`domain_proto` 已经显式
-  `PUBLIC` 链接了一组 absl 组件，新增用到 protobuf 生成类型的 target 通常不需要
-  再手动处理，但如果遇到类似链接错误，先检查是不是漏了某个 absl 组件而不是怀疑
-  protobuf 本身坏了——2026-08-22 开 `UW_COVERAGE=ON`（`--coverage` 改变链接顺序）
-  时就实测触发过一次新的缺口（`absl::log_internal_check_op` 的
-  `MakeCheckOpString`），加进 `cmake/UwProtobuf.cmake` 那份显式链接列表后修复；
-  平时不开这些少见的编译选项组合不会碰到，但说明这份列表并不能保证已经穷尽。
-- **MCAP C++ SDK 没有自己的 CMakeLists.txt**，`FetchContent_MakeAvailable` 用不了，
-  要用 `FetchContent_Populate` 手动接（见 `cmake/UwMcap.cmake`）。
-- **z 轴不是规范自由度**：x/y/yaw 对"相对位姿 + 声呐 range-only"的图确实是 gauge
-  freedom，但一旦有 depth 因子，z 就有了绝对参考。之前把 `kf0` 固定在纯
-  `Pose3::Identity()`（z=0）而其他 keyframe 被 depth 证据拉向真实深度，造成约束
-  冲突、求解器 30 次迭代不收敛、ATE 高达 4.6m——这是靠**实跑 demo** 而不是单元测试
-  发现的。修法是给 fixed 的 anchor keyframe 也用它自己的真实 depth 证据设 z，而不是
-  想当然地钉在 0。加新的绝对参考因子（比如未来的绝对朝向）时留意同样的陷阱。
-- **本机沙箱环境 apt 的 HTTP(80) 镜像会卡住不动，HTTPS(443) 正常**：根因是本机有个
-  本地 HTTP(S) 代理（`127.0.0.1:8019`，`$HTTP_PROXY`/`$HTTPS_PROXY` 已经设好），但
-  `apt-get`/`rosdep` 不会自动读这两个环境变量——需要显式写
-  `/etc/apt/apt.conf.d/95proxy`（`Acquire::http::Proxy "http://127.0.0.1:8019";` 同理
-  加 `https`）配置 apt 的代理，`rosdep update` 则是直接靠 shell 里的
-  `$HTTP_PROXY`/`$HTTPS_PROXY` 生效。**`sudo` 默认会清空这两个变量**，所以
-  `sudo rosdep init` 这类命令要用 `sudo -E`，否则代理配置对子进程不生效又卡住。
-  不要在 `apt-get`/`rosdep` 卡住时傻等，先检查代理配置好了没有；`tools/setup_dev_env.sh`
-  给 C++ 依赖走的是切 conda-forge 的回退逻辑。
-- **`configs/experiment/*.yaml` 里 `rig`/`scenario`/`defaults` 路径是相对 `configs/`
-  的**，不是相对 experiment 文件自己所在目录——第一次实现时按后者算漏了一层
-  `parent_path()`，读文件报错才发现。
-- **相机 optical frame 和 body frame 的旋转方向容易搞反**：`stereo_landmark_vo_frontend`
-  从相机坐标系解出的相对位姿要用 rig 标定的 camera→body 外参做共轭
-  （`T_body = T_cam_body * T_cam * T_cam_body^-1`）才能喂给以 body frame 定义的
-  相对位姿因子；第一版把方向搞反，单元测试全绿但实跑 demo 时 ATE 停在 6.67m 不收敛，
-  修对之后降到 0.061m——这也是**实跑 demo** 而非单元测试才发现的问题，同一类坑见
-  上面的 z 轴 anchor bug。共轭方向见 `docs/frames-and-sign-conventions.svg` 右半张。
-- **声光关联的并列几何分数不必然表示两个真实假设**：近 boresight 时 elevation 对
-  bearing 无影响、对 range 只有二阶影响，同一平面上的弧采样点会合理打平。关联器只有
-  在前两名深度也不满足 `depth_agreement_sigma` 合并方差门时才返回 `AMBIGUOUS`；不要
-  删除这条深度一致性判定，也不要靠放宽 `ambiguity_margin` 让场景矩阵变绿。
-- **场景矩阵中的预期拒绝不是回归**：`time_offset_fault`、
-  `extrinsic_perturbation`、`sonar_dropout`、`optical_invalid_region` 都刻意验证
-  fail-closed/回退语义。最低有效覆盖 gate 排除这些场景；其他场景出现 0 accepted
-  才应失败。`--min-fusion-improvement-fraction` 和延迟 gate 仍是 opt-in。
-- **`camera_rectifier` 目前是有限去畸变原语，不是通用 stereo rectifier**：它支持
-  plumb-bob 0/4/5 个系数和 MONO8/RGB8/BGR8，在 `StereoGeometry` 的平行基线前提下
-  去除镜头畸变；不处理任意相机相对旋转。它尚未接入 `replay_demo`，因为对现有真实
-  bag 的双线性重采样会削弱细纹理、让 VO 跟踪从 50/50 降到 8/50，后续需要联合调参。
-  `replay_demo` 现在用的是 `opencv_adapters` 的一般双目 rectification
-  （`adapters/opencv/`），不依赖这个原语。
-- **真实标定的非 y 轴基线会让 `cv::stereoRectify` 把主点搬离图像中心**：真实
-  HoloOcean 机体的基线有 15-17% 的 x/z 分量（`configs/rig/example_auv_real_camera.yaml`），
-  行对齐约束要求施加真实旋转，left 相机主点从 `cx≈256` 搬到 `cx≈170`（`alpha=-1`
-  复核过分毫不差，与裁切策略无关）。VO 的角点/匹配/RANSAC 在主点大幅偏移的
-  rectified 图上表现崩掉（ATE 4.32m、30 迭代 stalled，见 README「真实数据」一节）。
-  教训：**合成数据近乎平行基线验证过的视觉前端，不能默认在"需要真实旋转对齐"的
-  rig 上直接可用**——这是单元测试发现不了的，只有实跑真实数据才发现。
-- **ThreadSanitizer（`-DUW_SANITIZER=thread`）在本机沙箱里有两层坑**：(1) 不先关
-  ASLR 会直接 `FATAL: ThreadSanitizer: unexpected memory mapping`——连二进制都跑不
-  起来，跟代码无关；构建（`gtest_discover_tests` 会在构建期跑一次二进制枚举用例）
-  和运行都要套 `setarch $(uname -m) -R`。(2) 即使绕过 (1)，TSan 也会在完全单线程的
-  测试体里报 `heap-use-after-free`（比如
-  `DomainContract.ImageFrameRoundTripsWithCanonicalHeader`）——根因是这个 conda-forge
-  工具链的 `libprotobuf.so`/`libgtest.so` 是预编译的动态库，没有用
-  `-fsanitize=thread` 重新编译，TSan 看不到库内部的同步操作，会在 protobuf 自己的
-  atomic/arena 分配上报假阳性；同一段代码在 `UW_SANITIZER=address` 下（对真实
-  use-after-free 至少一样敏感）跑得干干净净，佐证了这是工具链问题不是真 bug。
-  `tools/run_quality_checks.sh` 因此只跑 `address`（ASan+UBSan）不跑 `thread`——要
-  让 TSan 真正可信，得从源码重新编译一套开 `-fsanitize=thread` 的
-  protobuf/gtest，目前没有这么做。
-- **`apps/synth_bag_gen.cpp` 曾经用同一个 `std::mt19937_64` 给三种不相关的噪声
-  （pose/sonar range-bearing/visual landmark jitter）共用一条流**：每个 keyframe
-  循环里，sonar 噪声抽取次数等于"这一帧在量程内的 `sonar_targets_world` 条数"，
-  这个数字一变（比如 `synthetic_smoke.yaml` 的 3 个目标 vs
-  `acoustic_optic_demo.yaml` 只放 1 个目标去凑相机窄视场），后续所有 keyframe 的
-  pose 噪声抽样就跟着错位——同一个 `seed: 42`，实际烘焙进 bag 的相对位姿噪声序列
-  却完全不同。表现为两个只差 scenario 文件里目标数量的 experiment，ATE 出现几倍
-  的差异，很容易被误读成"某个 factor/frontend 行为有问题"（这次具体是被误读成
-  "声光融合让 ATE 变差"，实际两者毫无因果关系——去掉 `sonar_range_v1`
-  factor_builder 重跑，cost 轨迹逐位不变，证明那次差异纯粹是噪声实现不同）。修法
-  是给每种噪声用途各开一条独立的 `std::mt19937_64`（`MakeStreamRng(seed, salt)`,
-  每个用途一个不同的固定 salt），互不干扰。这次拆流换了新的噪声实现，
-  `synthetic_smoke*`/`synthetic_loop_closure_vo*` 几个 experiment 头部注释和
-  README 里记的具体 ATE 数字（2026-08-26 之前）都是旧噪声实现下的值，已回填新
-  基线；`docs/` 下几份归档参考文档里的历史数字没有逐一回填，读到旧数字不代表
-  回归。
-- **`estimation/gauss_newton_solver.cpp` 的 `cost_change_tolerance` 曾经是绝对值
-  `1e-12`，跟这个量级问题（cost 几十到几百）的 `EvaluateAll`/`LDLT` 浮点噪声下限
-  基本重合**：真正收敛后的最后一两次迭代里，"cost 变化跌破容差"和"数值噪声让任何
-  trial step 都不再像是改进"是在赛跑，谁先发生基本看运气，会让同一个、实质上已经
-  收敛到 12+ 位有效数字的问题被随机报成 `converged` 或 `stalled`（`require_converged`
-  默认开，`stalled` 会让 replay_demo 直接 gate failure）。上面那次 RNG 拆流修复
-  正好把 `configs/experiment/synthetic_smoke_vo.yaml` 这次具体的随机噪声实现从
-  "险胜"的一侧推到了"险负"的一侧，实跑 demo 才发现——单测没有覆盖到这种量级的
-  cost。修法是把容差改成相对值（`cost_change_tolerance * max(1.0, |cost|)`），默认值
-  也从 `1e-12` 调到 `1e-9`，离浮点噪声下限留出安全边际。加新 experiment 或改
-  `synth_bag_gen` 的噪声参数时，如果 demo 报 `stalled` 但 ATE/cost 看起来其实已经
-  很稳定，先怀疑这类"容差比浮点噪声还紧"的假阴性，别急着当成真实的求解器/前端
-  鲁棒性问题。
+- **GCC 对同一个类里"嵌套 struct 做默认参数"处理有 bug**：`const Options& options = {}` 若 `Options` 嵌套在同一个类里会编译失败。解决方式是把这类 options/summary struct 提到 namespace scope（见 `GaussNewtonOptions`/`GaussNewtonSummary`），不要再往类里塞嵌套 struct 当默认参数类型。
+- **`protobuf::libprotobuf` 的 `INTERFACE_LINK_LIBRARIES` 不会自动透传 absl 符号** ——静态库链接会报 "DSO missing from command line"。`domain_proto` 已经显式 `PUBLIC` 链接了一组 absl 组件，新增用到 protobuf 生成类型的 target 通常不需要再手动处理，但如果遇到类似链接错误，先检查是不是漏了某个 absl 组件而不是怀疑 protobuf 本身坏了——2026-08-22 开 `UW_COVERAGE=ON`（`--coverage` 改变链接顺序）时就实测触发过一次新的缺口（`absl::log_internal_check_op` 的 `MakeCheckOpString`），加进 `cmake/UwProtobuf.cmake` 那份显式链接列表后修复；平时不开这些少见的编译选项组合不会碰到，但说明这份列表并不能保证已经穷尽。
+- **MCAP C++ SDK 没有自己的 CMakeLists.txt**，`FetchContent_MakeAvailable` 用不了，要用 `FetchContent_Populate` 手动接（见 `cmake/UwMcap.cmake`）。
+- **z 轴不是规范自由度**：x/y/yaw 对"相对位姿 + 声呐 range-only"的图确实是 gauge freedom，但一旦有 depth 因子，z 就有了绝对参考。之前把 `kf0` 固定在纯 `Pose3::Identity()`（z=0）而其他 keyframe 被 depth 证据拉向真实深度，造成约束冲突、求解器 30 次迭代不收敛、ATE 高达 4.6m——这是靠**实跑 demo** 而不是单元测试发现的。修法是给 fixed 的 anchor keyframe 也用它自己的真实 depth 证据设 z，而不是想当然地钉在 0。加新的绝对参考因子（比如未来的绝对朝向）时留意同样的陷阱。
+- **本机沙箱环境 apt 的 HTTP(80) 镜像会卡住不动，HTTPS(443) 正常**：根因是本机有个本地 HTTP(S) 代理（`127.0.0.1:8019`，`$HTTP_PROXY`/`$HTTPS_PROXY` 已经设好），但 `apt-get`/`rosdep` 不会自动读这两个环境变量——需要显式写 `/etc/apt/apt.conf.d/95proxy`（`Acquire::http::Proxy "http://127.0.0.1:8019";` 同理加 `https`）配置 apt 的代理，`rosdep update` 则是直接靠 shell 里的 `$HTTP_PROXY`/`$HTTPS_PROXY` 生效。**`sudo` 默认会清空这两个变量**，所以 `sudo rosdep init` 这类命令要用 `sudo -E`，否则代理配置对子进程不生效又卡住。不要在 `apt-get`/`rosdep` 卡住时傻等，先检查代理配置好了没有；`tools/setup_dev_env.sh` 给 C++ 依赖走的是切 conda-forge 的回退逻辑。
+- **`configs/experiment/*.yaml` 里 `rig`/`scenario`/`defaults` 路径是相对 `configs/` 的**，不是相对 experiment 文件自己所在目录——第一次实现时按后者算漏了一层 `parent_path()`，读文件报错才发现。
+- **相机 optical frame 和 body frame 的旋转方向容易搞反**：`stereo_landmark_vo_frontend` 从相机坐标系解出的相对位姿要用 rig 标定的 camera→body 外参做共轭（`T_body = T_cam_body * T_cam * T_cam_body^-1`）才能喂给以 body frame 定义的相对位姿因子；第一版把方向搞反，单元测试全绿但实跑 demo 时 ATE 停在 6.67m 不收敛，修对之后降到 0.061m——这也是**实跑 demo** 而非单元测试才发现的问题，同一类坑见上面的 z 轴 anchor bug。共轭方向见 `docs/frames-and-sign-conventions.svg` 右半张。
+- **声光关联的并列几何分数不必然表示两个真实假设**：近 boresight 时 elevation 对 bearing 无影响、对 range 只有二阶影响，同一平面上的弧采样点会合理打平。关联器只有在前两名深度也不满足 `depth_agreement_sigma` 合并方差门时才返回 `AMBIGUOUS`；不要删除这条深度一致性判定，也不要靠放宽 `ambiguity_margin` 让场景矩阵变绿。
+- **场景矩阵中的预期拒绝不是回归**：`time_offset_fault`、`extrinsic_perturbation`、`sonar_dropout`、`optical_invalid_region` 都刻意验证 fail-closed/回退语义。最低有效覆盖 gate 排除这些场景；其他场景出现 0 accepted 才应失败。`--min-fusion-improvement-fraction` 和延迟 gate 仍是 opt-in。
+- **`sensor_models` 里只保留 plumb-bob 畸变模型**（`PlumbBobDistortion` + 前向畸变多项式）：原 `UndistortImage` 图像 warp 原语已随 2026-09 精简移除——它未接 `replay_demo`，且双线性重采样会削弱细纹理、让 VO 跟踪率从 50/50 降到 8/50；`replay_demo` 用的是 `opencv_adapters` 的一般双目 rectification。
+- **真实标定的非 y 轴基线会让 `cv::stereoRectify` 把主点搬离图像中心**：真实 HoloOcean 机体的基线有 15-17% 的 x/z 分量（`configs/rig/example_auv_real_camera.yaml`），行对齐约束要求施加真实旋转，left 相机主点从 `cx≈256` 搬到 `cx≈170`（`alpha=-1` 复核过分毫不差，与裁切策略无关）。VO 的角点/匹配/RANSAC 在主点大幅偏移的 rectified 图上表现崩掉（ATE 4.32m、30 迭代 stalled，见 README「真实数据」一节）。教训：**合成数据近乎平行基线验证过的视觉前端，不能默认在"需要真实旋转对齐"的 rig 上直接可用**——这是单元测试发现不了的，只有实跑真实数据才发现。
+- **ThreadSanitizer（`-DUW_SANITIZER=thread`）在本机沙箱里有两层坑**：(1) 不先关 ASLR 会直接 `FATAL: ThreadSanitizer: unexpected memory mapping`——连二进制都跑不起来，跟代码无关；构建（`gtest_discover_tests` 会在构建期跑一次二进制枚举用例）和运行都要套 `setarch $(uname -m) -R`。(2) 即使绕过 (1)，TSan 也会在完全单线程的测试体里报 `heap-use-after-free`（比如 `DomainContract.ImageFrameRoundTripsWithCanonicalHeader`）——根因是这个 conda-forge 工具链的 `libprotobuf.so`/`libgtest.so` 是预编译的动态库，没有用 `-fsanitize=thread` 重新编译，TSan 看不到库内部的同步操作，会在 protobuf 自己的 atomic/arena 分配上报假阳性；同一段代码在 `UW_SANITIZER=address` 下（对真实 use-after-free 至少一样敏感）跑得干干净净，佐证了这是工具链问题不是真 bug。`tools/run_quality_checks.sh` 因此只跑 `address`（ASan+UBSan）不跑 `thread`——要让 TSan 真正可信，得从源码重新编译一套开 `-fsanitize=thread` 的 protobuf/gtest，目前没有这么做。
+- **`apps/synth_bag_gen.cpp` 曾经用同一个 `std::mt19937_64` 给三种不相关的噪声（pose/sonar range-bearing/visual landmark jitter）共用一条流**：每个 keyframe 循环里，sonar 噪声抽取次数等于"这一帧在量程内的 `sonar_targets_world` 条数"，这个数字一变（比如 `synthetic_smoke.yaml` 的 3 个目标 vs `acoustic_optic_demo.yaml` 只放 1 个目标去凑相机窄视场），后续所有 keyframe 的 pose 噪声抽样就跟着错位——同一个 `seed: 42`，实际烘焙进 bag 的相对位姿噪声序列却完全不同。表现为两个只差 scenario 文件里目标数量的 experiment，ATE 出现几倍的差异，很容易被误读成"某个 factor/frontend 行为有问题"（这次具体是被误读成 "声光融合让 ATE 变差"，实际两者毫无因果关系——去掉 `sonar_range_v1` factor_builder 重跑，cost 轨迹逐位不变，证明那次差异纯粹是噪声实现不同）。修法是给每种噪声用途各开一条独立的 `std::mt19937_64`（`MakeStreamRng(seed, salt)`, 每个用途一个不同的固定 salt），互不干扰。这次拆流换了新的噪声实现，`synthetic_smoke*`/`synthetic_loop_closure_vo*` 几个 experiment 头部注释和 README 里记的具体 ATE 数字（2026-08-26 之前）都是旧噪声实现下的值，已回填新基线；`docs/` 下几份归档参考文档里的历史数字没有逐一回填，读到旧数字不代表回归。
+- **`estimation/gauss_newton_solver.cpp` 的 `cost_change_tolerance` 曾经是绝对值 `1e-12`，跟这个量级问题（cost 几十到几百）的 `EvaluateAll`/`LDLT` 浮点噪声下限基本重合**：真正收敛后的最后一两次迭代里，"cost 变化跌破容差"和"数值噪声让任何 trial step 都不再像是改进"是在赛跑，谁先发生基本看运气，会让同一个、实质上已经收敛到 12+ 位有效数字的问题被随机报成 `converged` 或 `stalled`（`require_converged` 默认开，`stalled` 会让 replay_demo 直接 gate failure）。上面那次 RNG 拆流修复正好把 `configs/experiment/synthetic_smoke_vo.yaml` 这次具体的随机噪声实现从 "险胜"的一侧推到了"险负"的一侧，实跑 demo 才发现——单测没有覆盖到这种量级的 cost。修法是把容差改成相对值（`cost_change_tolerance * max(1.0, |cost|)`），默认值也从 `1e-12` 调到 `1e-9`，离浮点噪声下限留出安全边际。加新 experiment 或改 `synth_bag_gen` 的噪声参数时，如果 demo 报 `stalled` 但 ATE/cost 看起来其实已经很稳定，先怀疑这类"容差比浮点噪声还紧"的假阴性，别急着当成真实的求解器/前端鲁棒性问题。
 
 ## 目录速查
 
 不复述 `README.md` 已有的表格，只列会话中容易忘记具体在哪的：
 
-- 规范化 Protobuf 消息定义：`schemas/proto/uw/domain/*.proto`（目标检测/航迹/
-  操作员辅助状态都在 `target.proto`）
+- 规范化 Protobuf 消息定义：`schemas/proto/uw/domain/*.proto`（目标检测/航迹/ 操作员辅助状态都在 `target.proto`）
 - 规范 topic 词表（离线 bag + 审计依据）：`include/runtime/canonical_topics.hpp`
 - Pose3、相机/去畸变与声呐 beam 模型：`include/sensor_models/`
 - Frontend/FactorBuilder/ResidualBlock 抽象：`include/measurement_api/frontend.hpp`
@@ -273,18 +109,11 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
 - 事件源契约：`include/runtime/event_source.hpp`（MCAP/内存共用的 EventSource）
 - 回放编排：`include/application/replay_pipeline.hpp`
 - 回环闭合前端：`include/frontends/loop_closure_frontend.hpp`
-- Ceres 求解器适配器：`adapters/ceres/`；nanoflann 空间索引：`adapters/spatial_index/`；
-  OpenCV 双目 rectify：`adapters/opencv/`
-- HoloOcean 仿真录制（driver/conversions/canonical_writer/record_session）：
-  `adapters/holoocean/uw_holoocean_adapter/`
-- HWT9053-485 外挂 IMU 数据链（协议解析/均匀时间轴/Pi 侧 UDP 转发/BlueOS
-  extension/配置脚本）：`adapters/wit_imu/`，规格里点名的入口在
-  `tools/imu/wit_{configure,dump}.py`
-- 求解器基准脚本：`tools/bench/solver_benchmark.sh`
-- 集中式 CMake（library/application/test target 图）：`cmake/Dependencies.cmake`、
-  `cmake/Libraries.cmake`、`cmake/Applications.cmake`、`cmake/Tests.cmake`
+- nanoflann 空间索引：`adapters/spatial_index/`；OpenCV 双目 rectify：`adapters/opencv/`
+- HoloOcean 仿真录制（driver/conversions/canonical_writer/record_session）：`adapters/holoocean/uw_holoocean_adapter/`
+- HWT9053-485 外挂 IMU 数据链（协议解析/均匀时间轴/Pi 侧 UDP 转发/BlueOS extension/配置脚本）：`adapters/wit_imu/`，规格里点名的入口在 `tools/imu/wit_{configure,dump}.py`
+- 集中式 CMake（library/application/test target 图）：`cmake/Dependencies.cmake`、`cmake/Libraries.cmake`、`cmake/Applications.cmake`、`cmake/Tests.cmake`
 - 移植代码出处总账：`/NOTICE`
-- lint 脚本：`tools/lint/check_no_ros_in_core.sh`（兼容入口）/
-  `tools/lint/check_layer_dependencies.py`（实际实现）
+- lint 脚本：`tools/lint/check_no_ros_in_core.sh`（兼容入口）/ `tools/lint/check_layer_dependencies.py`（实际实现）
 - 确定性回放测试：`tests/integration/determinism_test.sh`
 - 声光场景矩阵 gate：`tests/integration/acoustic_optic_scenario_matrix_determinism_test.sh`

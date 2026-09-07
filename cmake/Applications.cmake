@@ -46,16 +46,6 @@ add_executable(synth_bag_gen apps/synth_bag_gen.cpp)
 target_link_libraries(synth_bag_gen PRIVATE uw::domain uw::core uw::runtime)
 uw_apply_application_defaults(synth_bag_gen)
 
-add_executable(synth_stereo_gen apps/synth_stereo_gen.cpp)
-target_link_libraries(synth_stereo_gen PRIVATE uw::domain uw::runtime)
-uw_apply_application_defaults(synth_stereo_gen)
-
-add_executable(optical_baseline_eval apps/optical_baseline_eval.cpp)
-target_link_libraries(optical_baseline_eval PRIVATE
-  uw::domain uw::runtime uw::evaluation uw::frontends
-)
-uw_apply_application_defaults(optical_baseline_eval)
-
 add_executable(acoustic_optic_scenario_matrix
   apps/acoustic_optic_scenario_matrix.cpp
   apps/acoustic_optic_scenarios.cpp

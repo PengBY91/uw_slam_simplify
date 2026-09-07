@@ -8,7 +8,7 @@
 # 轨迹）使用，见 configs/experiment/synthetic_loop_closure_vo_enabled.yaml。
 
 estimation:
-  solver: gauss_newton_v1        # 第一版图优化库未定，见架构文档第 20 节延后决策
+  solver: gauss_newton_v1
   max_iterations: 30
   initial_lambda: 1.0e-3
   warmup_seconds: 0.0

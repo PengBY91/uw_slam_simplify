@@ -57,9 +57,9 @@
 
 1. 在能见度好的水池或静水区录 ≥ 60 s 缓慢运动（≤ 0.3 m/s，含转向），得到 ≥ 50 个关键帧。
 2. 跑 `replay_demo --experiment configs/experiment/real_holoocean_vo.yaml`（rig 换成新文件）：
-   - 跟踪成功关键帧数 ≥ 40/50；
-   - 求解器 `converged`，不得 `stalled`；
-   - 若有真值（水池控制点，PREP-B-06；或仿真 stereo 配置），ATE 不劣于 0.67 m。
+- 跟踪成功关键帧数 ≥ 40/50；
+- 求解器 `converged`，不得 `stalled`；
+- 若有真值（水池控制点，PREP-B-06；或仿真 stereo 配置），ATE 不劣于 0.67 m。
 3. 用 `PREP-A-09` 的压缩退化配置重复一遍，确认在计划的传输码率下跟踪率不掉出阈值（这决定 `PREP-E-01` 的双目档位）。
 
 ## 7. 输出

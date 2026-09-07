@@ -64,14 +64,6 @@ target_link_libraries(estimation_tests PRIVATE
 )
 uw_register_gtest(estimation_tests "unit.estimation" "unit;estimation")
 
-if(UW_BUILD_CERES_SOLVER)
-  add_executable(adapters_ceres_tests tests/adapters/ceres/ceres_pose_graph_solver_test.cpp)
-  target_link_libraries(adapters_ceres_tests PRIVATE
-    uw::adapters_ceres uw::estimation uw::factor_builders GTest::gtest GTest::gtest_main
-  )
-  uw_register_gtest(adapters_ceres_tests "unit.adapters_ceres" "unit;estimation")
-endif()
-
 add_executable(mapping_tests
   tests/mapping/submap_manager_test.cpp
   tests/mapping/acoustic_optic_map_bridge_test.cpp
@@ -85,13 +77,11 @@ add_executable(runtime_tests
   tests/runtime/mcap_io_test.cpp
   tests/runtime/config_test.cpp
   tests/runtime/acoustic_optic_synchronizer_test.cpp
-  tests/runtime/acoustic_optic_buffer_test.cpp
   tests/runtime/bag_audit_checks_test.cpp
   tests/runtime/synthetic_sonar_test.cpp
   tests/runtime/canonical_event_test.cpp
   tests/runtime/canonical_event_validation_test.cpp
   tests/runtime/mcap_event_source_test.cpp
-  tests/runtime/rolling_latency_test.cpp
 )
 target_compile_definitions(runtime_tests PRIVATE UW_REPO_ROOT="${PROJECT_SOURCE_DIR}")
 target_link_libraries(runtime_tests PRIVATE
@@ -104,7 +94,6 @@ add_executable(evaluation_tests
   tests/evaluation/depth_metrics_test.cpp
   tests/evaluation/fusion_metrics_test.cpp
   tests/evaluation/map_metrics_test.cpp
-  tests/evaluation/control_point_metrics_test.cpp
 )
 target_link_libraries(evaluation_tests PRIVATE uw::evaluation GTest::gtest GTest::gtest_main)
 uw_register_gtest(evaluation_tests "unit.evaluation" "unit;evaluation")
@@ -173,14 +162,6 @@ add_test(
           ${PROJECT_SOURCE_DIR}/configs/experiment/synthetic_imu_preintegration.yaml
 )
 set_tests_properties(integration.imu_preintegration_smoke PROPERTIES LABELS "integration;replay")
-
-add_test(
-  NAME integration.optical_baseline_smoke
-  COMMAND bash ${PROJECT_SOURCE_DIR}/tests/integration/optical_baseline_smoke_test.sh
-          $<TARGET_FILE:synth_stereo_gen> $<TARGET_FILE:optical_baseline_eval>
-          ${PROJECT_SOURCE_DIR}/configs/experiment/synthetic_smoke.yaml
-)
-set_tests_properties(integration.optical_baseline_smoke PROPERTIES LABELS "integration;replay")
 
 add_test(
   NAME integration.acoustic_optic_scenario_matrix_determinism

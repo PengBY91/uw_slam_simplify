@@ -28,9 +28,7 @@
 - **扰动模型**：右扰动 `R ← R·Exp(δφ)`，与 `rigid_transform_fit.hpp`、`camera_body_conjugation.hpp` 注释一致；残差里位姿块仍用现有 7 参数 `[t, q_xyzw]` 布局。
 - **证据**：`estimated_noise_scale = 1.0`（估计器可再缩放）；`source_observations` 只放区间内首末样本 id（200 Hz × 数秒否则上百条）；`quality_features`：`sample_count`、`delta_time_s`、`max_hold_s`、`mean_rate_hz`、`held_backwards_at_start`、`lever_arm_m`。
 
-下图把本节几个容易混淆的时间跨度画在同一条轴上——**区间**（关键帧边界之间）、
-**保持段**（相邻两个 IMU 样本之间）、**静止预卷**（首个边界之前）各自有独立的
-拒绝规则：
+下图把本节几个容易混淆的时间跨度画在同一条轴上——**区间**（关键帧边界之间）、**保持段**（相邻两个 IMU 样本之间）、**静止预卷**（首个边界之前）各自有独立的拒绝规则：
 
 ```text
                 静止预卷 ≥ 0.5 s                    关键帧区间 i→j
@@ -116,12 +114,12 @@ r_ba = ba_j − ba_i
 - `PoseGraphProblem::AddInertialState(keyframe_id, v, bg, ba)`，内部 `inertial_states_` 与 `keyframes_` 平行；`GetInertialState/SetInertialState`。
 - `AddResidualBlock` 的 `involved_keyframes` 泛化为 `ParameterRef{kind: kPose|kInertial, keyframe_id}`，保留旧签名重载（全 `kPose`），现有 factor builder 一行不改。
 - `MutableParameterBlocks()` 返回 `{id, kind, double*, size, fixed}`；GN 求解器的自由变量索引按块大小累计，只对 `kPose` 块做四元数归一化。纯位姿图（没有惯性块）的求解路径**逐字节不变**，`synthetic_smoke*` 的 ATE 数字不会动，这是选它的主要理由。
-- Ceres 适配器：惯性块作为普通 9 维参数块添加。
+- ~~Ceres 适配器：惯性块作为普通 9 维参数块添加~~（适配器已随 2026-09 精简移除，快照在 `archive/rov-realtime-line2` 分支）
 - 代价：GN `EvaluateAll` 的列装配要从"每关键帧 7 列"改成"按块偏移"，约 60 行。
 
 **方案 B：把 Keyframe 扩成 16 参数。** 改动集中但所有残差的 `ParameterBlockSizes()` 都要从 7 变 16 或做偏移映射，且合成 demo 数值会因自由度增加而变（即使没有 IMU 因子，也需要给多出的 9 维加先验或固定）。不推荐。
 
-**顺带决策**：是否趁机把 GN 位姿更新改成 6 维切空间（`Exp(δφ)·q`）。现在 7 参数 + 归一化对小步长可用，但 15 维 IMU 残差的雅可比若直接对切空间推会更干净；建议**本任务不改**（保持 v1 求解器行为、避免同时动两处），把切空间更新列为 PREP-B-01 之后的独立项，用 `tools/bench/solver_benchmark.sh` 对比。
+**顺带决策**：是否趁机把 GN 位姿更新改成 6 维切空间（`Exp(δφ)·q`）。现在 7 参数 + 归一化对小步长可用，但 15 维 IMU 残差的雅可比若直接对切空间推会更干净；建议**本任务不改**（保持 v1 求解器行为、避免同时动两处），把切空间更新列为 PREP-B-01 之后的独立项，对比基准脚本已随 2026-09 精简移除（快照在 `archive/rov-realtime-line2` 分支），届时先恢复再比。
 
 ## 7. 初值与 anchor 陷阱（CLAUDE.md z 轴 anchor 的惯性版）
 
@@ -151,7 +149,7 @@ r_ba = ba_j − ba_i
 | `include/estimation/gauss_newton_solver.hpp` + `.cpp` | 列装配从"每关键帧 7 列"改成按块偏移（`FreeBlock{offset,size}`），只对 `kPose` 块归一化四元数；备份/回滚按 `free_order` 插入序遍历（不再遍历 hash map，去掉一处非确定性） | 既有 10 条估计器测试全绿；`synthetic_smoke` 实跑 ATE 0.0999 m / 4 迭代，落在 README 记录的 0.08–0.10 m 区间内 |
 | `include/factor_builders/imu_preintegration_residual.hpp` + `.cpp` | 15 维残差 + 全解析雅可比 | `imu_preintegration_residual_test.cpp` 7 条：零残差一致性、偏置行、白化、两组中心差分（含远离线性化偏置）、四元数列投影回极小雅可比、参数列表过短拒绝 |
 | `include/factor_builders/imu_preintegration_factor_builder.hpp` + `.cpp` | `imu_preintegration_v1`，LLT 白化，fail-closed | `imu_preintegration_factor_builder_test.cpp` 7 条：白化矩阵反演协方差、wire 往返、两个噪声旋钮只能放大不能收紧、错载荷/畸形消息/奇异协方差全部返回 nullptr |
-| `adapters/ceres/src/ceres_pose_graph_solver.cpp` | 惯性块作为 9 维欧氏参数块加入，位姿仍带四元数流形；两个后端共用 `GaussNewtonSolver::ParameterKey` | `CeresPoseGraphSolver.ImuOnlyChainRecoversPosesAndInertialStates` |
+（Ceres 适配器条目已随 2026-09 精简移除；快照在 `archive/rov-realtime-line2` 分支。）
 
 三处实施中与原设计不同、值得记下的地方：
 
@@ -208,7 +206,7 @@ HoloOcean fidelity 200 Hz、30 s 录制的逐秒 ATE/漂移曲线、时间倒退
 ## 9. 开放问题（需拍板）
 
 1. ~~第 6 节方案 A/B~~ — 2026-09-03 拍板取**方案 A**，已实施，见第 8.5 节。
-2. ~~GN 是否改切空间更新~~ — 2026-09-03 决定**不在本任务内做**，列为 PREP-B-01 之后的独立项，用 `tools/bench/solver_benchmark.sh` 对比后再定。当前 7 参数 + 归一化在 IMU-only 链路上收敛到 cost < 1e-12，没有暴露出必须先改的问题。
+2. ~~GN 是否改切空间更新~~ — 2026-09-03 决定**不在本任务内做**，列为 PREP-B-01 之后的独立项，对比基准脚本已随 2026-09 精简移除（快照在 `archive/rov-realtime-line2` 分支），届时先恢复再比。当前 7 参数 + 归一化在 IMU-only 链路上收敛到 cost < 1e-12，没有暴露出必须先改的问题。
 3. ~~`sigma_*_bias` 与 `sigma_*_bias_walk_c` 的语义~~ — 2026-09-03 拍板分离：前者只用于初始偏置先验，后者只用于随机游走；缺少 walk 字段时配置校验失败，不再回退。
 4. 杠杆臂角加速度项：当前忽略；若 IMU 安装距机体原点 > 10 cm 且需要高动态机动，再加 `α×r`（需要陀螺差分）。
 5. HoloOcean 30 s 漂移的最终数值门槛在首次无泄漏录制形成基线后确定；当前该项是量化表征，不作为 B-01 本地收口阻断项。

@@ -25,18 +25,6 @@ namespace uw::runtime {
 // quantization in corrected-time buffering.
 inline constexpr double kMaxAbsoluteSensorTimeOffsetSeconds = 10.0;
 
-// Bounded corrected-time queues used by AcousticOpticBuffer. Time windows
-// are inclusive; capacities are hard limits and must be positive.
-struct AcousticOpticBufferConfig {
-  double max_stereo_delta_s = 0.002;
-  double max_sonar_camera_delta_s = 0.050;
-  double max_state_bracket_s = 0.100;
-  double max_residence_s = 0.500;
-  std::size_t max_images_per_camera = 32;
-  std::size_t max_sonar_frames = 16;
-  std::size_t max_vehicle_states = 128;
-};
-
 // Translation and rotation get INDEPENDENT sqrt-information caps (rather
 // than one scalar for both) since RelativePoseFactorBuilder now whitens
 // from the VO frontend's actual 6x6 covariance (Task 9) — a single shared
@@ -119,19 +107,11 @@ struct LoopClosureConfig {
   int min_landmarks_for_pose = 3;
   int max_loop_edges_per_keyframe = 1;
   // Threaded into GaussNewtonOptions::huber_delta (gauss_newton_solver.hpp)
-  // -- a threshold on a loop edge's WHITENED residual norm, only meaningful
-  // when defaults.solver == "gauss_newton_v1" (the default); the Ceres
-  // adapter does not yet read PoseGraphProblem::ResidualBinding::
-  // robust_policy (see ceres_pose_graph_solver.cpp's own TODO).
+  // -- a threshold on a loop edge's WHITENED residual norm.
   double huber_delta = 1.5;
 };
 
 struct PlatformDefaultsConfig {
-  // "gauss_newton_v1" (default, uw::estimation::GaussNewtonSolver) or
-  // "ceres_v1" (uw::adapters::ceres_solver::CeresPoseGraphSolver — only
-  // usable if this binary was built with UW_BUILD_CERES_SOLVER=ON; selected
-  // but not compiled in is a fatal startup error, not a silent fallback).
-  // See docs/archive/superpowers/specs/2026-08-23-solver-and-mapping-oss-adoption.md.
   std::string solver = "gauss_newton_v1";
   int max_iterations = 30;
   double initial_lambda = 1e-3;
@@ -195,17 +175,6 @@ struct ScenarioNoiseConfig {
 // the association gate radius' floor and reported alongside the error so
 // a 5 cm error against a 30 cm plate reads differently from the same
 // error against a 5 cm sphere. `reflectivity_class` mirrors the
-// acoustic_reflectivity_class vocabulary in
-// adapters/holoocean/scenarios/*.yaml ("strong" / "moderate" / "weak") so
-// the same marker table can drive both the UE5 level (PREP-A-06/A-08) and
-// this metric.
-struct ScenarioControlPoint {
-  std::string tag;
-  Eigen::Vector3d position_W = Eigen::Vector3d::Zero();
-  double size_m = 0.3;
-  std::string reflectivity_class = "strong";
-};
-
 struct ScenarioConfig {
   uint64_t seed = 42;
   int num_keyframes = 12;
@@ -214,9 +183,6 @@ struct ScenarioConfig {
   double depth_m = 12.0;
   ScenarioNoiseConfig noise;
   std::vector<Eigen::Vector3d> sonar_targets_world;
-  // Empty for every scenario that has dense ground truth; populated for
-  // pool scenarios (PREP-A-08) where it is the only ground truth there is.
-  std::vector<ScenarioControlPoint> control_points;
 };
 
 // The fully-resolved layer stack for one run: defaults + rig + scenario,

@@ -44,33 +44,4 @@ struct PlumbBobDistortion {
 Eigen::Vector2d ApplyPlumbBobDistortion(const PlumbBobDistortion& distortion,
                                          const Eigen::Vector2d& normalized_undistorted);
 
-// Removes lens distortion from one MONO8/RGB8/BGR8 ImageFrame using
-// `intrinsics` (which must match the frame's width/height), producing a new
-// ImageFrame with `is_rectified` set to true. v1 scope, matching
-// camera_model.hpp's existing StereoGeometry assumption (identical camera
-// orientation, purely translational baseline): this only removes lens
-// distortion against the SAME K the frame already uses — it does not
-// reproject to a different K, and it does not perform a separate
-// rotation-based epipolar rectification. That is sufficient to make a
-// StereoGeometry::Resolve()-valid pair's rows epipolar-aligned once
-// distortion is removed; it is not a general off-axis rectifier (still out
-// of scope, per camera_model.hpp's own note).
-//
-// Uses the standard "remap" approach: for each destination (undistorted)
-// pixel, the FORWARD distortion model locates where it came from in the
-// source (distorted) image, which is then bilinearly sampled — no inversion
-// of the distortion polynomial is needed. Destination pixels whose source
-// location falls outside the source image are left black (0), matching
-// typical remap border behavior.
-//
-// Returns std::nullopt if `raw` fails uw::domain::ValidateImageFrame, its
-// dimensions don't match `intrinsics`, or `intrinsics` names an
-// unsupported distortion model (see PlumbBobDistortion::FromIntrinsics).
-// If the distortion is identity (all coefficients zero — true of every
-// synthetic rig today), returns `raw` unchanged, INCLUDING its existing
-// is_rectified value — there is nothing to rectify, so this deliberately
-// does not claim credit for work it didn't do.
-std::optional<uw::domain::ImageFrame> UndistortImage(const uw::domain::ImageFrame& raw,
-                                                       const uw::domain::CameraIntrinsics& intrinsics);
-
 }  // namespace uw::sensor_models
