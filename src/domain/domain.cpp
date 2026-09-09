@@ -20,8 +20,12 @@ Stamp ToStamp(std::chrono::system_clock::time_point tp) {
 }
 
 std::chrono::system_clock::time_point ToTimePoint(const Stamp& stamp) {
-  return std::chrono::system_clock::time_point{std::chrono::seconds(stamp.seconds()) +
-                                                 std::chrono::nanoseconds(stamp.nanos())};
+  // duration_cast to the clock's own duration keeps this portable:
+  // libstdc++ accepts a time_point braced with the common_type duration
+  // directly, libc++ (macOS) requires exactly system_clock::duration.
+  return std::chrono::system_clock::time_point(
+      std::chrono::duration_cast<std::chrono::system_clock::duration>(
+          std::chrono::seconds(stamp.seconds()) + std::chrono::nanoseconds(stamp.nanos())));
 }
 
 double ToSeconds(const Stamp& stamp) {
