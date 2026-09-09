@@ -66,7 +66,6 @@
 | landmark | 路标 | 世界中被多帧观测到的固定 3D 点，SLAM 地图的基本单元 |
 | data association | 数据关联 | 判断"这次检测是不是上次那个目标/路标"的问题；SLAM 最容易错的环节之一 |
 | submap | 子地图 | 地图的分段管理单元；本仓库 v1 的 `SubmapManager` 名字有 historical 成分，实际只是关键帧索引的证据库 |
-| surfel | 面元 | 带法向的小面片点，一种紧凑的地图表示（`SurfelMap`） |
 | ATE | 绝对轨迹误差 | 估计轨迹与真值轨迹对应点的距离统计（rmse/mean/max），SLAM 精度的标准指标 |
 | TUM 格式 | TUM 轨迹格式 | `时间戳 x y z qx qy qz qw` 每行一位姿的文本格式，因 TUM 机器人组广泛使用得名 |
 | AUV / ROV | 自主水下机器人 / 遥控水下机器人 | 前者自主航行；后者（本项目）由操作员/飞手驾驶 |
@@ -114,7 +113,7 @@ flowchart TB
     F3 --> G
     F4 --> G
     G --> H["estimation/pose_graph_problem<br/>+ gauss_newton_solver 手写 LM"]
-    H --> I["mapping/submap_manager + surfel_map"]
+    H --> I["mapping/submap_manager"]
     H --> J["evaluation/trajectory_metrics ATE"]
     H --> K["runtime/run_manifest<br/>+ 轨迹落盘"]
     J --> L["EvaluateReplayGates（纯函数）<br/>不收敛 / 超阈值 → 退出码非零"]

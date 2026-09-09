@@ -1,29 +1,8 @@
-#include <optional>
-#include <utility>
-
 #include <gtest/gtest.h>
 
 #include "measurement_api/frontend.hpp"
-#include "measurement_api/providers.hpp"
 
 namespace {
-
-class FakeCameraFrameProvider final : public uw::measurement_api::CameraFrameProvider {
- public:
-  explicit FakeCameraFrameProvider(uw::domain::ImageFrame frame) : frame_(std::move(frame)) {}
-
-  std::optional<uw::domain::ImageFrame> PollImageFrame() override {
-    if (!frame_.has_value()) return std::nullopt;
-    auto result = std::move(frame_);
-    frame_.reset();
-    return result;
-  }
-
-  uw::domain::HealthReport Health() const override { return {}; }
-
- private:
-  std::optional<uw::domain::ImageFrame> frame_;
-};
 
 class FakeMetricOpticalFrontend final : public uw::measurement_api::OpticalDepthFrontend {
  public:
@@ -48,14 +27,6 @@ class FakeMetricOpticalFrontend final : public uw::measurement_api::OpticalDepth
 };
 
 }  // namespace
-
-TEST(MeasurementApiContract, CameraProviderPollsCanonicalImageFrame) {
-  uw::domain::ImageFrame frame;
-  frame.mutable_header()->mutable_observation_id()->set_value("camera_1");
-  FakeCameraFrameProvider provider(frame);
-  ASSERT_TRUE(provider.PollImageFrame().has_value());
-  EXPECT_FALSE(provider.PollImageFrame().has_value());
-}
 
 TEST(MeasurementApiContract, OpticalFrontendDoesNotRequireStereoAtInterfaceBoundary) {
   uw::measurement_api::CameraFrameBundle bundle;

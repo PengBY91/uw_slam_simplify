@@ -57,14 +57,14 @@ MeasurementEvidence / HypothesisSet
 | `include/estimation`、`src/estimation` | 位姿图和 Eigen 实现的 Gauss-Newton/LM |
 | `include/mapping`、`src/mapping` | 局部地图证据管理、融合深度到点云的转换 |
 | `include/runtime`、`src/runtime` | MCAP、配置、同步、RunManifest 等 runtime 支持原语 |
-| `adapters/` 各子目录 | HoloOcean（Python 录制）、OpenCV、nanoflann、wit_imu 等外部系统边界 |
+| `adapters/` 各子目录 | HoloOcean（Python 录制）、OpenCV、wit_imu 等外部系统边界 |
 | `include/evaluation`、`src/evaluation` | ATE、深度/融合和点云地图质量指标（尚无 RPE） |
 | `include/application`、`src/application` | 跨算法、runtime 与评测层的用例编排；当前即离线回放管线（`replay_pipeline`） |
 | `apps` | 参数解析和进程入口；调用 `application` 服务或单一用途的共享原语 |
 | `tests` | 消息格式与接口一致性测试（`contracts/`）、按层单元测试、确定性回放（`integration/`） |
 | `external_repos` | 只读参考代码，不是本系统运行主体 |
 
-最重要的设计规则是：算法层不能知道 HoloOcean 或 vendor 类型；外部数据进入算法层前，必须先转换成 Protobuf 规范化消息类型。第三方依赖各自隔离在一个 adapter 里——OpenCV 在 `adapters/opencv/`、nanoflann 在 `adapters/spatial_index/`；`mapping` 见到的空间索引是纯虚接口（`SurfelSpatialIndex`），具体实现由 `application` 注入（Ceres 适配器已随 2026-09 精简移除，快照在 `archive/rov-realtime-line2` 分支）。这条不变量由 `tools/lint/check_no_ros_in_core.sh`（实际实现 `tools/lint/check_layer_dependencies.py`）强制检查，改完代码顺手跑一下。
+最重要的设计规则是：算法层不能知道 HoloOcean 或 vendor 类型；外部数据进入算法层前，必须先转换成 Protobuf 规范化消息类型。第三方依赖各自隔离在一个 adapter 里——OpenCV 在 `adapters/opencv/`。求解器的 Ceres 适配器已随 2026-09 精简移除（快照在 `archive/rov-realtime-line2` 分支）；nanoflann 空间索引适配器（`SurfelMap` 专用）因主线零调用者随 2026-09-09 精简移除，git 历史可恢复。这条不变量由 `tools/lint/check_no_ros_in_core.sh`（实际实现 `tools/lint/check_layer_dependencies.py`）强制检查，改完代码顺手跑一下。
 
 `schemas/proto/` 只定义可跨语言传递的消息类型；`include/measurement_api` 则定义 C++ 进程内接口。后者的 `ResidualBlock` 是求解器接口，不属于 Protobuf 的唯一事实源。
 

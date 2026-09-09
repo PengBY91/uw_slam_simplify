@@ -95,7 +95,6 @@ uw_apply_library_defaults(estimation)
 add_library(mapping STATIC
   src/mapping/submap_manager.cpp
   src/mapping/acoustic_optic_map_bridge.cpp
-  src/mapping/surfel_map.cpp
 )
 add_library(uw::mapping ALIAS mapping)
 target_include_directories(mapping PUBLIC "${PROJECT_SOURCE_DIR}/include")
@@ -110,7 +109,6 @@ add_library(runtime STATIC
   src/runtime/bag_audit_checks.cpp
   src/runtime/synthetic_sonar.cpp
   src/runtime/mcap_event_source.cpp
-  src/runtime/canonical_event_validation.cpp
 )
 add_library(uw::runtime ALIAS runtime)
 target_include_directories(runtime PUBLIC "${PROJECT_SOURCE_DIR}/include")
@@ -130,16 +128,6 @@ target_include_directories(evaluation PUBLIC "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(evaluation PUBLIC uw::core)
 uw_apply_library_defaults(evaluation)
 
-add_library(spatial_index_adapters STATIC
-  adapters/spatial_index/src/nanoflann_surfel_index.cpp
-)
-add_library(uw::spatial_index_adapters ALIAS spatial_index_adapters)
-target_include_directories(spatial_index_adapters PUBLIC
-  "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/adapters/spatial_index/include"
-)
-target_link_libraries(spatial_index_adapters PUBLIC uw::mapping nanoflann)
-uw_apply_library_defaults(spatial_index_adapters)
-
 add_library(application STATIC
   src/application/replay_pipeline.cpp
   src/application/event_pump.cpp
@@ -151,6 +139,5 @@ target_link_libraries(application
   PUBLIC uw::domain uw::core
   PRIVATE uw::runtime uw::estimation uw::evaluation
           uw::factor_builders uw::mapping uw::frontends uw::opencv_adapters
-          uw::spatial_index_adapters
 )
 uw_apply_library_defaults(application)

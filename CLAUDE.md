@@ -17,7 +17,7 @@
 ## 硬性规则
 
 - **不要修改 `external_repos/` 下的任何子目录**（`SVIn/`、`sonar_camera_reconstruction/`、`ocean_t/`，以及后来加入的 `holoocean-ros/`——HoloOcean 官方 ROS2 接口包，含 `holoocean_main`/`holoocean_interfaces`/`holoocean_examples`——和 `holoocean_bridge/`——一个同事的 HoloOcean→ROS2 桥接包，供 `sonar_camera_reconstruction_baseline`/`svin_bridge` 的 README 引用为参考）。它们是只读的参考/移植来源，各自有自己的来源，整个 `external_repos/` 已被 `.gitignore` 排除在本仓库版本控制之外。（`holoocean-ros/`——HoloOcean 官方 ROS2 接口包——和 `holoocean_bridge/` 曾是主线二 ROS2 消费链的参考/接入来源，主线二剥离后本仓库已不再消费它们，但目录仍在磁盘上，规则照旧不碰。）
-- **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation, mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`，OpenCV 隔离在 `adapters/opencv/`（lint 角色名 `opencv_adapters`，注意它的源码直接住在 `adapters/opencv/{include,src}` 而不是顶层 `include/`/`src/`），nanoflann 在 `adapters/spatial_index/`；`apps/` 只做参数解析和进程入口，用例编排放在 `application`。`include/`、`src/` 下任何生产代码都不能 include HoloOcean/OpenCV/第三方 vendor 头，也不能再用旧的 `uw/...` 手写头路径——这是 `tools/lint/check_layer_dependencies.py`（`tools/lint/check_no_ros_in_core.sh` 是它的兼容入口）强制检查的不变量，改完代码顺手跑一下。`estimation`/`mapping` 层见到的求解器/空间索引都是纯虚接口（`Solver`、`SurfelSpatialIndex`），具体第三方实现在 adapters 层、由 `application` 注入——给这两层加功能时保持这个方向。
+- **依赖只能单向**：`domain → core → {frontends, factor_builders, estimation, mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`，OpenCV 隔离在 `adapters/opencv/`（lint 角色名 `opencv_adapters`，注意它的源码直接住在 `adapters/opencv/{include,src}` 而不是顶层 `include/`/`src/`）；`apps/` 只做参数解析和进程入口，用例编排放在 `application`。`include/`、`src/` 下任何生产代码都不能 include HoloOcean/OpenCV/第三方 vendor 头，也不能再用旧的 `uw/...` 手写头路径——这是 `tools/lint/check_layer_dependencies.py`（`tools/lint/check_no_ros_in_core.sh` 是它的兼容入口）强制检查的不变量，改完代码顺手跑一下。（求解器与空间索引的第三方注入点见下一条及 2026-09 精简记录：当前 estimation 里是 Eigen 手写求解器本体，nanoflann 空间索引适配器已随主线零调用者移除。）
 - **移植第三方代码前先读 `NOTICE`**。仓库整体是 GPLv3（因为移植了 SVIn 的 GPLv3 代码），移植文件必须保留原始版权头，新移植内容要在 `NOTICE` 里补一节说明来源、移植了什么、刻意没移植什么。目前已移植两处：
 - `include/factor_builders/sonar_range_residual.hpp` + `src/factor_builders/sonar_range_residual.cpp`：残差公式来自 SVIn 的 `SonarError`，但雅可比是**独立重新推导的**——上游雅可比和自己的残差在数学上不自洽，直接抄会引入错误。
 - `include/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.hpp` + `src/frontends/{cfar_detector,dbscan,sonar_cfar_frontend}.cpp`：CFAR + 极坐标转换 + DBSCAN 来自 `sonar_camera_reconstruction`，但**没有**移植它 `merge.py` 里丢弃 pitch、直接烘焙到 `map` frame 的部分——前端只应输出声呐局部坐标系下的证据，不应该自己决定全局位姿。
@@ -76,7 +76,7 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
 - 求解器（`include/estimation`/`src/estimation`）是 Eigen 手写的 Gauss-Newton/LM（`gauss_newton_v1`，唯一受支持值）。Ceres 适配器与 `tools/bench/solver_benchmark.sh` 基准脚本已随 2026-09 精简移除（快照在 `archive/rov-realtime-line2` 分支）；要引入第三方求解器时先恢复适配器或走 adapters 层注入的新实现，不要在 `estimation` 层直接 include 第三方头。
 - YAML 配置分层（`defaults → rig → scenario → experiment`，见 `include/runtime/config.hpp`）：`experiment/*.yaml` 里的 `rig`/ `scenario`/`defaults` 三个 key 是相对 `configs/` 目录（不是相对 experiment 文件自己所在目录）写的路径，加新 experiment 文件时注意这一点。
 - `PressureDepthMeasurement.depth_m` 是**正向下**的水深量；仓库 world/body frame 是 Z-up，所以位姿 z 使用 `-depth_m`。`OpticalDepthPriorMeasurement`、`FusedDepthMeasurement` 和关联记录中的 `depth_m` 则是相机 optical frame 的 **正向前**距离。字段同名但坐标与符号语义不同，不要直接混用。两条约定画在同一张图上：`docs/frames-and-sign-conventions.svg`（README「坐标系与符号约定」一节引用）。
-- `ValidateExperimentConfigSelections()` 会拒绝未知的 frontend/map backend/estimator/ detector/solver 标识符。真正驱动分支的选择器有三个：`estimator_mode` （相对位姿来源）、`frontends.landmark_detector`（VO 检测器双模）、`frontends.landmark_detector`（VO 检测器双模）。sonar/optical frontend 与 map backend 当前只有一个被接受的实现，fail-fast 不等于已有多后端切换——`SurfelMap` 虽然存在（声光地图桥在用），但它不是 `map_backend` 的第二个可选值。
+- `ValidateExperimentConfigSelections()` 会拒绝未知的 frontend/map backend/estimator/ detector/solver 标识符。真正驱动分支的选择器有三个：`estimator_mode`（相对位姿来源）、`frontends.landmark_detector`（VO 检测器双模）、`defaults` 层 `loop_closure.enabled`（回环开关）。sonar/optical frontend 与 map backend 当前只有一个被接受的实现，fail-fast 不等于已有多后端切换。
 - 回环闭合（`frontends/loop_closure_frontend.hpp`）由 `defaults` 层 `loop_closure.enabled` 控制、默认关，要求 `estimator_mode: stereo_landmark_vo` + 带 rig 相机。它**固定用 HarrisCornerDetector**（真实图像假设），跟 `synth_bag_gen` 给 bright_blob 调的合成高亮图案不是一套外观假设——放宽 `candidate_search_radius_m` 在合成场景上会把错误匹配放进来、ATE 反而恶化，这是 v1 默认值刻意保守的原因，不要当 bug 修。
 
 ## 已经踩过的坑（省得重新踩一遍)
@@ -109,7 +109,7 @@ ctest --test-dir build -R integration.acoustic_optic_scenario_matrix_determinism
 - 事件源契约：`include/runtime/event_source.hpp`（MCAP/内存共用的 EventSource）
 - 回放编排：`include/application/replay_pipeline.hpp`
 - 回环闭合前端：`include/frontends/loop_closure_frontend.hpp`
-- nanoflann 空间索引：`adapters/spatial_index/`；OpenCV 双目 rectify：`adapters/opencv/`
+- OpenCV 双目 rectify：`adapters/opencv/`
 - HoloOcean 仿真录制（driver/conversions/canonical_writer/record_session）：`adapters/holoocean/uw_holoocean_adapter/`
 - HWT9053-485 外挂 IMU 数据链（协议解析/均匀时间轴/Pi 侧 UDP 转发/BlueOS extension/配置脚本）：`adapters/wit_imu/`，规格里点名的入口在 `tools/imu/wit_{configure,dump}.py`
 - 集中式 CMake（library/application/test target 图）：`cmake/Dependencies.cmake`、`cmake/Libraries.cmake`、`cmake/Applications.cmake`、`cmake/Tests.cmake`

@@ -119,16 +119,6 @@ void PoseGraphProblem::AddResidualBlockOnParameters(
       Binding{std::move(block), std::move(involved_parameters), robust_policy});
 }
 
-std::vector<PoseGraphProblem::KeyframeParameterBlock> PoseGraphProblem::MutableParameterBlocks() {
-  std::vector<KeyframeParameterBlock> blocks;
-  blocks.reserve(order_.size());
-  for (const auto& id : order_) {
-    auto& kf = keyframes_.at(id);
-    blocks.push_back(KeyframeParameterBlock{id, kf.params.data(), kf.fixed});
-  }
-  return blocks;
-}
-
 std::vector<PoseGraphProblem::ParameterBlockView> PoseGraphProblem::MutableAllParameterBlocks() {
   std::vector<ParameterBlockView> blocks;
   blocks.reserve(order_.size() + inertial_order_.size());

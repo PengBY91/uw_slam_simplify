@@ -125,24 +125,6 @@ class PoseGraphProblem {
   std::size_t NumKeyframes() const { return order_.size(); }
   std::size_t NumResidualBlocks() const { return residual_blocks_.size(); }
 
-  // Backend-agnostic solver accessors, replacing the earlier single
-  // `friend class GaussNewtonSolver` — any solver (GaussNewtonSolver, a
-  // future Ceres/GTSAM adapter) reads/mutates the graph through these two
-  // methods instead of being individually friended. `params` points at the
-  // same 7 contiguous doubles Pose3::ToParameterBlock()/FromParameterBlock()
-  // use (tx,ty,tz,qx,qy,qz,qw); the pointer stays valid until the next call
-  // that adds a keyframe (AddKeyframe may rehash keyframes_) or destroys the
-  // problem, matching the lifetime a solver already needs it for (one
-  // Solve() call).
-  struct KeyframeParameterBlock {
-    std::string keyframe_id;
-    double* params;
-    bool fixed;
-  };
-  // Order matches KeyframeOrder(). Poses only — kept as-is so callers that
-  // predate inertial states (and only ever want poses) do not change.
-  std::vector<KeyframeParameterBlock> MutableParameterBlocks();
-
   // Every optimizable block, poses first (in KeyframeOrder()) then inertial
   // states (in InertialStateOrder()). `size` is 7 for kPose and
   // kInertialBlockDim (9) for kInertial. Solvers use this one; the

@@ -48,9 +48,9 @@
 | 声呐前端 | CFAR 检测、极坐标转换、DBSCAN 聚类；声呐目标提取（多目标检测 + 配置驱动参数校验） | 已实现并有固定 fixture 回归测试 |
 | 光学相对位姿 | 立体特征点 VO：blob/Harris 双模检测 + NCC 匹配 + RANSAC 刚体拟合，从左右相机帧实时算相对位姿；RANSAC 拟合附带数值 SE(3) 协方差，白化进 relative-pose 因子 | 已实现并接入 Demo（`estimator_mode: stereo_landmark_vo`）；跟踪失败按健康状态分级，单帧失败不丢失参考 keyframe |
 | 回环闭合 | `LoopClosureFrontend`：位姿邻近候选检索 + 立体三角化 + 重访匹配 + RANSAC + Huber 稳健损失 | 已实现并接入 `replay_demo`（`defaults` 层 `loop_closure.enabled`，默认关）；v1 是位姿邻近检索而非外观检索（无 DBoW2），固定用 Harris 检测器，见[回环闭合 Demo](#4-回环闭合对比-demo) |
-| 声光深度融合 | 声呐弧投影、跨模态关联、后验深度优化、局部点云/surfel 地图交接 | 已实现九场景矩阵；CTest 强制执行最低有效覆盖 gate，质量收益与延迟 gate 仍为 opt-in |
+| 声光深度融合 | 声呐弧投影、跨模态关联、后验深度优化、局部点云地图交接 | 已实现九场景矩阵；CTest 强制执行最低有效覆盖 gate，质量收益与延迟 gate 仍为 opt-in |
 | 状态估计 | Eigen 手写 Gauss-Newton/LM（`gauss_newton_v1`） | 已实现并接入 Demo |
-| 地图与评测 | `SubmapManager`（点云子图）+ `SurfelMap`（置信度加权 surfel 融合、离群抑制、自由空间挖掘，nanoflann 空间索引适配器）；ATE、深度/融合和点云 Chamfer/completeness/outlier/F-score 指标 | ATE/深度/融合已用于现有验证；点云指标已有 API/单测但尚未接 Demo 或门禁；尚无 RPE |
+| 地图与评测 | `SubmapManager`（点云子图；曾并存的 `SurfelMap`/nanoflann 空间索引已随 2026-09 精简移除，主线零调用者，git 历史可恢复）；ATE、深度/融合和点云 Chamfer/completeness/outlier/F-score 指标 | ATE/深度/融合已用于现有验证；点云指标已有 API/单测但尚未接 Demo 或门禁；尚无 RPE |
 | 可复现实验 | 四层 YAML 配置、不可变 `RunManifest`、确定性 MCAP 回放 | Manifest 已写 git/config/标定 hash、平台、seed 和起止时间；完整数据/依赖 provenance 仍待补齐 |
 | 仿真接入 | HoloOcean Python 网关、统一 MCAP 格式录制、相机标定、版本化实时场景/任务 manifest（`adapters/holoocean/scenarios/`） | 已在原生 Windows HoloOcean 2.3.0 录制真实双目 bag 并离线回放；当前 Linux 开发机未重新运行仿真器 |
 
@@ -62,7 +62,6 @@
 | 核心消息与接口 | Protobuf、`measurement_api` |
 | 录制与回放 | MCAP |
 | 仿真与数据集适配 | Python 3.10+、HoloOcean |
-| 空间索引 | nanoflann（FetchContent，总是启用，供 SurfelMap 使用） |
 | 构建与验证 | CMake 3.22+、CTest、GoogleTest、pytest |
 
 ## 快速开始
@@ -76,7 +75,7 @@
 - CMake 3.22+、支持 C++17 的 GCC；
 - Eigen3、Protobuf/`protoc`、GoogleTest、yaml-cpp、OpenCV 4（`core`、`calib3d`、`imgproc`）；
 - Python 3.10+、`venv` 和 `pip`；
-- 首次配置时可访问网络，以获取 MCAP C++ SDK 和 nanoflann（FetchContent）。
+- 首次配置时可访问网络，以获取 MCAP C++ SDK（FetchContent）。
 
 仓库提供了 apt 优先、conda-forge 回退的安装助手：
 
@@ -219,7 +218,7 @@ flowchart LR
     ODO --> FACTOR
     LC[回环闭合前端<br/>loop_closure.enabled] --> FACTOR
     FACTOR --> EST["位姿图求解<br/>gauss_newton_v1"]
-    EST --> MAP["SubmapManager 点云<br/>+ SurfelMap surfel 融合"]
+    EST --> MAP["SubmapManager 点云子图"]
     EST --> EVAL[ATE + 深度/融合指标]
     EST --> OUT[轨迹 + RunManifest]
 ```
@@ -233,7 +232,7 @@ flowchart LR
     CORE --> ALGO["frontends / factor_builders /<br/>estimation / mapping"]
     CORE --> RUNTIME[runtime<br/>配置、事件源、队列、MCAP、Manifest]
     CORE --> EVAL[evaluation<br/>ATE + 深度/融合指标]
-    CORE --> ADAPTERS[adapters<br/>HoloOcean、OpenCV、nanoflann]
+    CORE --> ADAPTERS[adapters<br/>HoloOcean、OpenCV]
     CORE --> OPENCV_ADAPTERS[opencv_adapters<br/>stereo rectification<br/>视觉辅助 + HMI 渲染]
     OPENCV[OpenCV 4<br/>硬依赖] --> OPENCV_ADAPTERS
     ALGO --> APPLICATION[application<br/>用例编排]
@@ -244,12 +243,11 @@ flowchart LR
     APPLICATION --> APPS[apps<br/>参数解析与可执行入口]
 ```
 
-依赖只允许从左向右（`domain → core → {frontends, factor_builders, estimation, mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`）。`include/`、`src/` 下的生产代码不能包含 HoloOcean 或第三方 vendor 头文件，也不能使用旧的手写 `uw/...` include 路径。OpenCV 4 是构建硬依赖，`opencv2/...` 头与 OpenCV 类型只允许出现在 `adapters/opencv/`（lint 角色名 `opencv_adapters`）边界内；nanoflann 只允许出现在 `adapters/spatial_index/`。`tools/lint/check_no_ros_in_core.sh`（实际实现在 `tools/lint/check_layer_dependencies.py`）会强制检查这一切。Protobuf schema 是 C++ 与 Python 跨语言规范化消息模型的唯一来源。
+依赖只允许从左向右（`domain → core → {frontends, factor_builders, estimation, mapping, runtime, evaluation, adapters, opencv_adapters} → application → apps`）。`include/`、`src/` 下的生产代码不能包含 HoloOcean 或第三方 vendor 头文件，也不能使用旧的手写 `uw/...` include 路径。OpenCV 4 是构建硬依赖，`opencv2/...` 头与 OpenCV 类型只允许出现在 `adapters/opencv/`（lint 角色名 `opencv_adapters`）边界内。`tools/lint/check_no_ros_in_core.sh`（实际实现在 `tools/lint/check_layer_dependencies.py`）会强制检查这一切。Protobuf schema 是 C++ 与 Python 跨语言规范化消息模型的唯一来源。
 
 几个边界内已实现的组件：
 
 - `opencv_adapters::StereoRectificationContext`（`adapters/opencv/include/opencv_adapters/stereo_rectifier.hpp`）：任意 plumb-bob 畸变、不同内参、非平行/非水平的一般离轴 stereo rig 的 rectify，产出 rectified images 和带新 `calibration_version` 的 derived `RigCalibrationSnapshot`，已接入 `apps/replay_demo`。
-- `adapters/spatial_index` 的 nanoflann `SurfelSpatialIndex`：`mapping` 层只见纯虚接口，实现在 adapters 层注入（`application` 负责把两边接到一起）。
 
 ### Live/Replay 统一输入主链
 
@@ -289,7 +287,7 @@ flowchart LR
 | `cmake/` | 集中式 CMake：`Dependencies.cmake`、`Libraries.cmake`、`Applications.cmake`、`Tests.cmake` |
 | `adapters/holoocean/` | HoloOcean Python 网关（仿真录制 → 规范化 MCAP） |
 | `adapters/wit_imu/` | HWT9053-485 外挂 IMU 数据链（真实硬件） |
-| `adapters/opencv/`、`adapters/spatial_index/` | OpenCV / nanoflann 的边界隔离实现 |
+| `adapters/opencv/` | OpenCV 的边界隔离实现 |
 | `baselines/` | 外部基线（如 `sonar_camera_reconstruction`）运行脚本，不链接进本仓库构建 |
 | `configs/` | `defaults → rig → scenario → experiment` 分层配置 |
 | `tools/` | 环境安装、代码生成、lint、求解器基准（`bench/`）和完整验证脚本 |
@@ -429,10 +427,10 @@ flowchart TB
 
 ## 已知边界
 
-- **位姿图估计不消费稠密光学深度**：位姿图只用声呐、相对位姿、深度（和可选回环）证据；声光融合的输出是并行存进地图层的证据（点云 submap + surfel），不参与位姿估计。`stereo_landmark_vo` 是纯视觉里程计，不融合 IMU，也不是完整的 VIO 前端。
+- **位姿图估计不消费稠密光学深度**：位姿图只用声呐、相对位姿、深度（和可选回环）证据；声光融合的输出是并行存进地图层的证据（点云 submap），不参与位姿估计。`stereo_landmark_vo` 是纯视觉里程计，不融合 IMU，也不是完整的 VIO 前端。
 - **回环闭合 v1 是位姿邻近检索**：没有外观检索（DBoW2 类）；候选半径默认 3 m，在死推算漂移大的场景很难触发；固定用 Harris 检测器，与合成高亮图案外观假设不匹配（见回环 Demo 一节）。`platform_loop_closure.yaml` 默认关，保证其余 experiment 零行为变化。
 - **求解器是 Eigen 手写 Gauss-Newton/LM**（Ceres 适配器与基准脚本已随精简移除，历史快照在 `archive/rov-realtime-line2` 分支）；GTSAM 未接入。
-- **`map_backend` 仍只有一个受支持值**：`SurfelMap` 已经存在并被声光地图桥使用，但它不是 `map_backend` 的第二个可选值——配置层面还切换不了。
+- **`map_backend` 仍只有一个受支持值**：历史上曾有第二个地图表示 `SurfelMap`，因主线零调用者随 2026-09 精简移除（git 历史可恢复）；配置层面目前切换不了。
 - **位姿图只优化 keyframe，不联合优化路标**；声呐 elevation 初值不会被后续因子精化。
 - **reliability 多路信息上限目前只实现固定常数**，尚未实现完整的自适应策略。
 - **真实 HoloOcean bag 的 VO 尚未收敛**（ATE 4.32 m，根因见 Demo 一节）。

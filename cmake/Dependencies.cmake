@@ -6,7 +6,6 @@ find_package(OpenCV 4 REQUIRED COMPONENTS core calib3d imgproc)
 
 include(UwProtobuf)
 include(UwMcap)
-include(UwNanoflann)
 
 if(UW_BUILD_TESTS)
   enable_testing()

@@ -67,7 +67,6 @@ uw_register_gtest(estimation_tests "unit.estimation" "unit;estimation")
 add_executable(mapping_tests
   tests/mapping/submap_manager_test.cpp
   tests/mapping/acoustic_optic_map_bridge_test.cpp
-  tests/mapping/surfel_map_test.cpp
 )
 target_link_libraries(mapping_tests PRIVATE uw::mapping GTest::gtest GTest::gtest_main)
 uw_register_gtest(mapping_tests "unit.mapping" "unit;mapping")
@@ -80,7 +79,6 @@ add_executable(runtime_tests
   tests/runtime/bag_audit_checks_test.cpp
   tests/runtime/synthetic_sonar_test.cpp
   tests/runtime/canonical_event_test.cpp
-  tests/runtime/canonical_event_validation_test.cpp
   tests/runtime/mcap_event_source_test.cpp
 )
 target_compile_definitions(runtime_tests PRIVATE UW_REPO_ROOT="${PROJECT_SOURCE_DIR}")
@@ -105,14 +103,6 @@ target_link_libraries(adapters_tests PRIVATE
   uw::opencv_adapters GTest::gtest GTest::gtest_main
 )
 uw_register_gtest(adapters_tests "unit.adapters" "unit;adapters")
-
-add_executable(spatial_index_adapters_tests
-  tests/adapters/spatial_index/nanoflann_surfel_index_test.cpp
-)
-target_link_libraries(spatial_index_adapters_tests PRIVATE
-  uw::spatial_index_adapters GTest::gtest GTest::gtest_main
-)
-uw_register_gtest(spatial_index_adapters_tests "unit.spatial_index_adapters" "unit;mapping")
 
 add_executable(application_tests
   tests/application/replay_pipeline_test.cpp

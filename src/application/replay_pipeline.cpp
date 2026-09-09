@@ -750,6 +750,43 @@ int uw::application::RunReplayPipeline(const ReplayOptions& opt,
               << " keyframe(s) had no camera/GT timestamp; used MCAP log_time_ns as a fallback\n";
   }
 
+  // One shared tail for every relative-pose factor source below -- bag
+  // evidence (black_box_vio), stereo VO, and loop closure all produce the
+  // same RelativePoseMeasurement payload and differ only in where the
+  // evidence came from and how the edge enters the graph:
+  //   - sequential edges (VO, bag evidence) dead-reckon their `to` keyframe
+  //     into the graph as the initial guess the solver later refines;
+  //   - loop edges run AFTER dead reckoning has populated the graph, so they
+  //     require `to` to already exist and carry a robust policy instead.
+  // Returns true iff a factor was actually added.
+  auto add_relative_pose_edge =
+      [&](const uw::domain::MeasurementEvidence& evidence, bool dead_reckon_to,
+          uw::estimation::PoseGraphProblem::RobustPolicy robust_policy) -> bool {
+    const auto& measurement =
+        uw::domain::GetPayload<uw::domain::RelativePoseMeasurement>(evidence);
+    const std::string from = measurement.from_keyframe().value();
+    const std::string to = measurement.to_keyframe().value();
+    if (!problem.HasKeyframe(from)) return false;  // out-of-order/unexpected input: skip, don't guess
+    if (dead_reckon_to) {
+      const auto measured_relative = Pose3::FromProto(measurement.relative_pose());
+      problem.AddKeyframe(to, problem.GetKeyframePose(from) * measured_relative);
+    } else if (!problem.HasKeyframe(to)) {
+      return false;
+    }
+
+    uw::domain::FactorCandidate candidate;
+    candidate.set_residual_model(uw::factor_builders::RelativePoseFactorBuilder::kResidualModel);
+    candidate.set_proposed_noise(relative_pose_sqrt_info);
+    if (robust_policy == uw::estimation::PoseGraphProblem::RobustPolicy::kHuber) {
+      candidate.set_robust_policy_hint(uw::domain::ROBUST_POLICY_HUBER);
+    }
+    auto block = relative_pose_builder.Build(candidate, evidence, {});
+    if (!block) return false;
+    problem.AddResidualBlock(std::move(block), {from, to}, robust_policy);
+    evidence_by_keyframe[to].push_back(evidence.evidence_id());
+    return true;
+  };
+
   int num_relative_pose_factors = 0;
   int num_imu_factors = 0;
   int num_imu_intervals_rejected = 0;
@@ -994,23 +1031,8 @@ int uw::application::RunReplayPipeline(const ReplayOptions& opt,
       // even if VO later degrades).
       vo_health_by_keyframe[kf_id] = vo_frontend.Health().status();
       if (!vo_evidence.has_value()) continue;  // first frame seen, or couldn't fit this transition
-
-      const auto& measurement = uw::domain::GetPayload<uw::domain::RelativePoseMeasurement>(*vo_evidence);
-      const std::string from = measurement.from_keyframe().value();
-      const std::string to = measurement.to_keyframe().value();
-      if (!problem.HasKeyframe(from)) continue;  // out-of-order/unexpected input: skip, don't guess
-
-      const auto measured_relative = Pose3::FromProto(measurement.relative_pose());
-      const auto dead_reckoned_initial_guess = problem.GetKeyframePose(from) * measured_relative;
-      problem.AddKeyframe(to, dead_reckoned_initial_guess);
-
-      uw::domain::FactorCandidate candidate;
-      candidate.set_residual_model(uw::factor_builders::RelativePoseFactorBuilder::kResidualModel);
-      candidate.set_proposed_noise(relative_pose_sqrt_info);
-      auto block = relative_pose_builder.Build(candidate, *vo_evidence, {});
-      if (block) {
-        problem.AddResidualBlock(std::move(block), {from, to});
-        evidence_by_keyframe[to].push_back(vo_evidence->evidence_id());
+      if (add_relative_pose_edge(*vo_evidence, /*dead_reckon_to=*/true,
+                                 uw::estimation::PoseGraphProblem::RobustPolicy::kNone)) {
         ++num_relative_pose_factors;
       }
     }
@@ -1019,22 +1041,8 @@ int uw::application::RunReplayPipeline(const ReplayOptions& opt,
   } else {
     for (const auto& evidence : input.evidence) {
       if (!uw::domain::HasPayload<uw::domain::RelativePoseMeasurement>(evidence)) continue;
-      const auto& measurement = uw::domain::GetPayload<uw::domain::RelativePoseMeasurement>(evidence);
-      const std::string from = measurement.from_keyframe().value();
-      const std::string to = measurement.to_keyframe().value();
-      if (!problem.HasKeyframe(from)) continue;  // out-of-order/unexpected input: skip, don't guess
-
-      const auto measured_relative = Pose3::FromProto(measurement.relative_pose());
-      const auto dead_reckoned_initial_guess = problem.GetKeyframePose(from) * measured_relative;
-      problem.AddKeyframe(to, dead_reckoned_initial_guess);
-
-      uw::domain::FactorCandidate candidate;
-      candidate.set_residual_model(uw::factor_builders::RelativePoseFactorBuilder::kResidualModel);
-      candidate.set_proposed_noise(relative_pose_sqrt_info);
-      auto block = relative_pose_builder.Build(candidate, evidence, {});
-      if (block) {
-        problem.AddResidualBlock(std::move(block), {from, to});
-        evidence_by_keyframe[to].push_back(evidence.evidence_id());
+      if (add_relative_pose_edge(evidence, /*dead_reckon_to=*/true,
+                                 uw::estimation::PoseGraphProblem::RobustPolicy::kNone)) {
         ++num_relative_pose_factors;
       }
     }
@@ -1080,20 +1088,8 @@ int uw::application::RunReplayPipeline(const ReplayOptions& opt,
       const auto loop_evidences =
           loop_frontend.Process(bundle, rectification_context->DerivedRig(), kf_id, problem.GetKeyframePose(kf_id));
       for (const auto& loop_evidence : loop_evidences) {
-        const auto& measurement = uw::domain::GetPayload<uw::domain::RelativePoseMeasurement>(loop_evidence);
-        const std::string from = measurement.from_keyframe().value();
-        const std::string to = measurement.to_keyframe().value();
-        if (!problem.HasKeyframe(from) || !problem.HasKeyframe(to)) continue;
-
-        uw::domain::FactorCandidate candidate;
-        candidate.set_residual_model(uw::factor_builders::RelativePoseFactorBuilder::kResidualModel);
-        candidate.set_proposed_noise(relative_pose_sqrt_info);
-        candidate.set_robust_policy_hint(uw::domain::ROBUST_POLICY_HUBER);
-        auto block = relative_pose_builder.Build(candidate, loop_evidence, {});
-        if (block) {
-          problem.AddResidualBlock(std::move(block), {from, to},
-                                   uw::estimation::PoseGraphProblem::RobustPolicy::kHuber);
-          evidence_by_keyframe[to].push_back(loop_evidence.evidence_id());
+        if (add_relative_pose_edge(loop_evidence, /*dead_reckon_to=*/false,
+                                   uw::estimation::PoseGraphProblem::RobustPolicy::kHuber)) {
           ++num_loop_closure_factors;
         }
       }

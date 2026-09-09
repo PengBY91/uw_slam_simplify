@@ -90,11 +90,10 @@ core → {algorithms, runtime, evaluation, adapters} → application → apps
 | frontends（合并全部前端实现，含 CFAR、立体深度、立体 VO、IMU 预积分、回环闭合、声光关联/融合） | `include/frontends`、`src/frontends` | `frontends` | `core` | 声呐、光学与惯性前端 |
 | factor_builders（合并全部残差/因子构建） | `include/factor_builders`、`src/factor_builders` | `factor_builders` | `core` | 残差 + 雅可比 |
 | estimation | `include/estimation`、`src/estimation` | `estimation` | `core`, Eigen3 | Gauss-Newton/LM 求解器、`PoseGraphProblem`（含 9 维惯性块）、`StateStore` |
-| mapping（合并 submap_manager + surfel_map + acoustic_optic_map_bridge） | `include/mapping`、`src/mapping` | `mapping` | `core` | 按 keyframe 存储的地图证据管理 |
+| mapping（合并 submap_manager + acoustic_optic_map_bridge） | `include/mapping`、`src/mapping` | `mapping` | `core` | 按 keyframe 存储的地图证据管理 |
 | runtime | `include/runtime`、`src/runtime` | `runtime` | `core`, `mcap_impl`, `protobuf`, `yaml-cpp`, Eigen3 | 分层配置加载、canonical topic/event、MCAP 读写封装、`RunManifest`、声光同步 |
 | adapters/holoocean（Python，独立包） | `adapters/holoocean/` | Python `uw_holoocean_adapter` | protobuf, mcap, numpy | 直连 HoloOcean Python API，录制统一 MCAP bag |
 | opencv_adapters | `adapters/opencv/{include,src}` | `opencv_adapters` | OpenCV | 一般双目 stereo rectification（源码住在 `adapters/opencv/`，不占顶层 `include/`） |
-| spatial_index_adapters | `adapters/spatial_index/` | `spatial_index_adapters` | nanoflann | `SurfelSpatialIndex` 的 nanoflann 实现，由 `application` 注入 `mapping` |
 | evaluation | `include/evaluation`、`src/evaluation` | `evaluation` | `core` | ATE、深度、融合和点云地图指标（没有 RPE） |
 | application | `include/application`、`src/application` | `application` | 算法、runtime、evaluation | 跨层用例编排；当前包含离线回放管线与事件泵 |
 | apps | `apps/synth_bag_gen.cpp`, `apps/replay_demo.cpp`, `apps/bag_audit.cpp` 等 | 各自独立可执行文件 | `application` 或单一用途所需层 | 参数解析与进程入口 |
@@ -119,7 +118,7 @@ include/                     手写公共头文件，按角色分区（物理 uw
                               imu_preintegration_{residual,factor_builder}、inertial_prior_residual
   estimation/                gauss_newton_solver / pose_graph_problem / state_store
   mapping/                   submap_manager（按 keyframe 存储 MapEvidence）、
-                              surfel_map、acoustic_optic_map_bridge（声光 plan 6）
+                              acoustic_optic_map_bridge（声光 plan 6）
   frontends/                 （上面已列）CFAR、立体深度、VO、IMU 预积分、回环闭合、声光关联/融合
   runtime/
     config.hpp                defaults→rig→scenario→experiment 分层配置类型
@@ -141,7 +140,6 @@ apps/
 adapters/
   holoocean/                  Python 包 uw_holoocean_adapter：HoloOcean 网关 + 统一 MCAP 录制
   opencv/                     双目 rectification（源码住在这里，不占顶层 include/）
-  spatial_index/              nanoflann 的 SurfelSpatialIndex 实现
   wit_imu/                    HWT9053-485 外挂 IMU 数据链（协议解析/UDP 转发/BlueOS extension）
 baselines/
   sonar_camera_reconstruction/ 纯 stub 外部基线，脚本体是 TODO+exit 1（原
@@ -553,6 +551,8 @@ struct GaussNewtonSummary {
 九场景的 gate 语义必须分开理解：`time_offset_fault`、`extrinsic_perturbation`、`sonar_dropout`、`optical_invalid_region` 刻意构造为同步拒绝、几何 fail-closed 或光学回退，0 accepted 是预期结果并被最低覆盖 gate 排除；其余五个有效场景必须至少产生一个 accepted。`tests/integration/acoustic_optic_scenario_matrix_determinism_test.sh` 以 `--seed 4242 --trials-per-scenario 8` 运行两次，比较去掉真实墙钟 `p95_latency_ms` 后的输出，并保留第一次矩阵进程的退出码；coverage gate 非零会让 CTest 失败。`--min-fusion-improvement-fraction` 已实现但仍 opt-in，校准后的质量收益、NLL 和真实调度器 P95 延迟门仍是后续工作。
 
 ### 6.11 `include/mapping/acoustic_optic_map_bridge.hpp`（声光 plan 6：局部地图数据交接，系列收尾）
+
+**2026-09-09 更新**：`SurfelMap`、`SurfelSpatialIndex`、nanoflann 适配器（`adapters/spatial_index/`，含 `cmake/UwNanoflann.cmake` 与 nanoflann FetchContent 依赖）与 `FuseDepthIntoSurfels` 已随主线精简整体移除——主线（`replay_pipeline`）零生产调用者，只被各自单测消费；需要时从 git 历史恢复。下面 D8-D11 各节保留为设计记录，描述的是已移除的代码。
 
 **2026-08-22 更新**：这个文件现在有两个函数，不是一个——见本节末尾新增的 `FuseDepthIntoSurfels` 小节（P3 roadmap item 2「visual-only 和 sonar-grounded 两条局部几何路径」）。下面这几段描述的仍是原有的 `BuildMapEvidenceFromFusedDepth`，**未被这次改动触碰**（`git log` 上是纯新增，不是修改）。
 
