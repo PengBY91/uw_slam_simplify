@@ -1,18 +1,19 @@
-# RigCalibrationSnapshot 的人可读来源（唯一标定事实源，架构文档第 7.1 节）。
-# 字段名对应 schemas/proto/uw/domain/calibration.proto；apps/replay_demo 等已经在消费这份文件。
+# 【合成 demo 的占位机体标定】"这台机体长什么样"的唯一事实源：传感器外参、
+# 内参、噪声模型、时钟偏移。字段一一对应 schemas/proto/uw/domain/calibration.proto
+# （加载后直接解析成 RigCalibrationSnapshot protobuf 消息，无平行手写结构），
+# 被 --experiment 引用它的 synth_bag_gen 与 replay_demo 消费。
 #
-# 注意：这份文件被 apps/synth_bag_gen.cpp 同时用作"合成相机图像的生成参数"
-# ——cameras 块的 width/height/k_matrix_row_major 不只是"标定结果"，还直接
-# 决定合成 demo 怎么渲染左右相机帧，換掉这里的数字会改变
-# synthetic_smoke/synthetic_smoke_vo 的合成图像和下游 ATE 数字（见 README
-# 「运行端到端 Demo」）。2026-08-21 用 calibrate_camera.py 对真实
-# OpenWater-HoveringCamera 场景标定出了一组真实值（512x512 分辨率，
-# fx≈250，立体基线≈0.231m，17/16 视角，rms 0.46px/0.43px）——先不直接覆盖
-# 这里的合成占位值，等有专门的"真实数据 rig"文件或者确认要不要拆分
-# 合成/真实两份 rig 配置再处理，避免顺手带偏已经在跟踪的合成 demo 数字。
+# 注意 cameras 块的双重角色：它既是回放侧标定，又被 synth_bag_gen 当作合成
+# 图像的渲染参数（分辨率/内参决定合成双目帧长什么样）——改这里的数字会改变
+# synthetic_smoke* 等合成实验的图像和下游 ATE 基线。真实标定值在
+# example_auv_real_camera.yaml，不要回填覆盖这份占位值。
 
-calibration_version: "example_auv_v2"
+calibration_version: "example_auv_v2"   # 标定快照版本字符串（记录进 RunManifest）
 
+# 外参树：每条边是 parent→child 的 4x4 齐次变换（row-major，平移在前三行第四列）。
+# 机体系约定 x 前 / y 左 / z 上（全仓库统一，不用欧拉角）。
+# 两个 camera link 的位置差 = 立体基线；这里占位值是纯 y 轴 0.12m 的近平行基线
+# （合成 VO 前端就是在这个假设下调的）。
 frame_tree:
   - parent_frame: base_link
     child_frame: imu_link
@@ -31,6 +32,8 @@ frame_tree:
     transform_row_major:
       [1,0,0,0.1, 0,1,0,0, 0,0,1,-0.05, 0,0,0,1]
 
+# 相机内参（占位值：640x480、fx=420、零畸变）。畸变模型全仓库只支持 plumb_bob
+# 一种，distortion 即其 5 参数 (k1,k2,p1,p2,k3)。
 cameras:
   - sensor_id: camera_left
     width: 640
@@ -45,6 +48,8 @@ cameras:
     distortion: [0,0,0,0]
     distortion_model: plumb_bob
 
+# 各传感器的硬件时钟偏移，符号约定 t_reference = t_sensor_capture + 偏移，
+# 上限 ±10s（时钟校准只修传感器级 skew，不桥接不同纪元）。
 time_offset_seconds:
   camera_left: 0.0
   camera_right: 0.0
@@ -53,6 +58,7 @@ time_offset_seconds:
   depth0: 0.0
   rov-state: 0.0
 
+# 各偏移值的来源（审计信息，不参与计算）。
 time_offset_provenance:
   camera_left: measured:simulation
   camera_right: measured:simulation
@@ -61,32 +67,37 @@ time_offset_provenance:
   depth0: measured:simulation
   rov-state: measured:simulation
 
+# 哪些传感器话题提供机体状态真值（rov-state → /gt/state）。
 vehicle_state_sensors:
   - rov-state
 
+# IMU 噪声模型（IMU 预积分因子与合成 IMU 流共用）。与
+# example_auv_sonar_only.yaml 刻意保持同一组值：同一 scenario 换 rig 时
+# /raw/imu 流必须逐字节不变（experiment/synthetic_imu_preintegration_camera.yaml
+# 的对照实验在把关这条性质）。
 imu_noise:
-  sigma_gyro_c: 1.6968e-4
-  sigma_accel_c: 2.0e-3
-  sigma_gyro_bias: 1.9393e-5
-  sigma_accel_bias: 3.0e-3
-  # 偏置随机游走密度，与上面两个初始偏置先验是不同语义、不互相回退
-  # （docs/imu-preintegration-design-2026-09-03.md 第 9 节第 3 条）。与
-  # example_auv_sonar_only.yaml 取同一组值，这样同一个 scenario 换成带相机
-  # 的 rig 时 IMU 流逐字节不变。
+  sigma_gyro_c: 1.6968e-4        # 陀螺连续时间噪声密度
+  sigma_accel_c: 2.0e-3          # 加速度计连续时间噪声密度
+  sigma_gyro_bias: 1.9393e-5     # 初始陀螺偏置先验 σ
+  sigma_accel_bias: 3.0e-3       # 初始加速度计偏置先验 σ
+  # 偏置随机游走密度——与上面两个初始偏置先验是不同语义，互不替代。
   sigma_gyro_bias_walk_c: 1.0e-5
   sigma_accel_bias_walk_c: 1.0e-4
-  rate_hz: 200
-  gravity_mps2: 9.80665
+  rate_hz: 200                   # 采样率（Hz）
+  gravity_mps2: 9.80665          # 重力加速度（m/s²）
 
+# 声呐成像几何模型（每台声呐一条）。
 sonar_beam_models:
   - sensor_id: sonar0
-    horizontal_fov_rad: 2.09
-    elevation_aperture_rad: 0.19
-    range_resolution_m: 0.02
-    nominal_speed_of_sound_mps: 1500.0
+    horizontal_fov_rad: 2.09           # 水平视场 ≈120°
+    elevation_aperture_rad: 0.19       # 俯仰孔径 ≈11°
+    range_resolution_m: 0.02           # 距离分辨率（米）
+    nominal_speed_of_sound_mps: 1500.0 # 水中声速（m/s）
     sonar_enabled: true
 
+# 深度计模型。符号注意：深度计的 depth_m 是正向下的水深，而 world/body frame
+# 是 Z-up，位姿 z = -depth_m；它跟相机光学帧的 depth_m（正向前距离）同名不同义。
 depth_models:
   - sensor_id: depth0
-    noise_sigma_m: 0.05
+    noise_sigma_m: 0.05    # 深度量测噪声 σ（米）
     depth_enabled: true

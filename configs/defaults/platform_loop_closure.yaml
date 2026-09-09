@@ -1,11 +1,20 @@
-# 跟 platform.yaml 完全一样，唯一区别是显式打开 loop_closure（其余字段沿用
-# LoopClosureConfig 的结构体默认值，见 include/runtime/config.hpp）。独立成
-# 一份文件而不是往 platform.yaml 里加，是因为 platform.yaml 是本仓库其余所有
-# experiment 的共享默认值——loop_closure 默认关闭这件事本身就是保证其余
-# experiment 零行为变化的机制，不应该被一次性的对比实验改掉。
+# 与 platform.yaml 逐字段一致，唯一区别是打开回环闭合（见文件末尾
+# loop_closure.enabled: true）。独立成文件而不是直接改 platform.yaml：
+# platform.yaml 是其余所有实验的共享基线，"回环默认关"本身就是保证既有实验
+# 零行为变化的机制，不该被一次性的对比实验改掉。
+# 用法：experiment 的 defaults 换成本文件即开启回环（对照实验见
+# experiment/synthetic_loop_closure_vo.yaml 与 _enabled.yaml）。
 #
-# 配合 configs/scenario/synthetic_loop_closure.yaml（整整一圈、回到起点的合成
-# 轨迹）使用，见 configs/experiment/synthetic_loop_closure_vo_enabled.yaml。
+# 只写 enabled 时，其余回环参数走结构体默认值（include/runtime/config.hpp）：
+#   candidate_search_radius_m: 3.0    位姿邻近检索半径。刻意保守：实测放宽到
+#                                     8~20 会引入错误匹配、ATE 反而恶化（见
+#                                     experiment/synthetic_loop_closure_vo_enabled.yaml）
+#   min_keyframe_index_gap: 15        候选 keyframe 对的最小序号差，排除时间近邻
+#   max_accepted_translation_m: 5.0   对 RANSAC 恢复出的相对位姿做 sanity 上限（平移模长）
+#   max_accepted_rotation_rad: 0.6    同上（旋转角）
+#   min_landmarks_for_pose: 3         恢复相对位姿所需最少 landmark 数
+#   max_loop_edges_per_keyframe: 1    每个 keyframe 最多接受的回环边数
+#   huber_delta: 1.5                  回环边白化残差的 Huber 阈值，压错误边影响
 
 estimation:
   solver: gauss_newton_v1
@@ -33,4 +42,4 @@ frontends:
     default_bearing_sigma_rad: 0.01
 
 loop_closure:
-  enabled: true
+  enabled: true   # 与 platform.yaml 的唯一区别

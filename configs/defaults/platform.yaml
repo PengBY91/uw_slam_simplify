@@ -1,24 +1,24 @@
-# 平台级默认值。不包含任何具体机体/场景信息（架构文档第 14.2 节）。
-# 通过 --experiment 被 apps/synth_bag_gen 和 apps/replay_demo 消费；
-# 具体消费到什么程度见 configs/README.md。
+# 平台级算法默认值（"算法基线"层）：求解器参数、各证据类型的权重上限、声呐
+# CFAR 前端参数。不含任何机体（rig）或场景（scenario）信息，被绝大多数
+# experiment 的 defaults: 引用——改这里的值会同时影响所有引用它的实验。
+#
+# 这里没写的可配字段走 include/runtime/config.hpp 的结构体默认值：
+# visual_odometry（VO 健康度）、stereo_matching（双目匹配过滤）、
+# frontends.stereo_rectification（双目 rectify）、loop_closure.*（回环，默认关）、
+# gates（验收 gate 基值，默认只开 require_converged）。要调时在此补上对应块。
 
 estimation:
-  solver: gauss_newton_v1
-  max_iterations: 30
-  initial_lambda: 1.0e-3
-  # 丢弃开局前 N 秒的证据再开始融合（0 = 不启用）。取的是一个同类 ROS2 SVIn+
-  # HoloOcean 部署（workfiles_02 的 merge_node）里"IMU 偏置还没收敛前丢弃早期帧"
-  # 的经验；我们没有在线 IMU 滤波器，落地方式是：warmup 窗口内的 keyframe 整体
-  # 不进图，第一个存活下来的 keyframe 变成新的 fixed anchor（实现见
-  # apps/replay_demo.cpp）。
+  solver: gauss_newton_v1   # 唯一受支持值：Eigen 手写的 Gauss-Newton/LM
+  max_iterations: 30        # LM 外层迭代上限
+  initial_lambda: 1.0e-3    # Levenberg-Marquardt 初始阻尼系数
+  # 开局前 N 秒的 keyframe 整体不进位姿图（0 = 不启用）；第一个存活下来的
+  # keyframe 成为图的 fixed anchor。用于丢弃 VIO/IMU 偏置尚未收敛的早期数据。
   warmup_seconds: 0.0
 
 reliability:
-  # 架构文档第 8.4 节：final_information = min(learned, physical, calibration, cross_modal)
-  # v1 只实现了固定常数上限，真正的多路 cap 是后续工作。relative_pose 拆成
-  # translation/rotation 两个独立上限（不再是单一 scalar）：
-  # RelativePoseFactorBuilder 现在从 VO 前端的真实 6x6 covariance 白化残差，
-  # 一个共用上限会让平移/旋转互相拖累对方的量级。
+  # 各证据类型的 sqrt-information 上限（≈1/σ；cap 越大 = 该证据最多被信得越
+  # "硬"）。v1 是固定常数 cap；relative_pose 拆平移/旋转两个独立上限，因为 VO
+  # 前端带真实 6x6 协方差，单一标量会让两者互相拖累对方的量级。
   default_sqrt_information:
     relative_pose:
       translation: 20.0
@@ -27,12 +27,14 @@ reliability:
     depth: 20.0
 
 frontends:
+  # 声呐 CA-CFAR 检测 + DBSCAN 聚类参数。此块有 unknown-key 检查：写不存在
+  # 的 key 会直接报错，不会静默忽略。
   sonar_cfar:
-    training_cells: 16
-    guard_cells: 4
-    probability_false_alarm: 0.01
-    detector_threshold: 50
-    dbscan_eps_m: 0.20
-    dbscan_min_samples: 2
-    default_range_sigma_m: 0.05
+    training_cells: 16             # 训练单元数（偶数）：待检 range bin 两侧各 8 个，用于估计背景噪声
+    guard_cells: 4                 # 保护单元数（偶数）：紧贴待检 bin、不参与噪声估计，防目标能量泄漏
+    probability_false_alarm: 0.01  # 虚警率 Pfa，决定自适应阈值的放大因子；越小阈值越高
+    detector_threshold: 50         # 强度下限（0-255）：CFAR 判中但原始强度低于此值仍丢弃
+    dbscan_eps_m: 0.20             # 极坐标→笛卡尔后 DBSCAN 聚类的邻域半径（米）
+    dbscan_min_samples: 2          # 成簇最少点数，不足者当噪声丢弃
+    default_range_sigma_m: 0.05        # 声呐证据默认量测噪声 σ（喂给下游因子）
     default_bearing_sigma_rad: 0.01

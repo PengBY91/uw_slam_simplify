@@ -1,17 +1,13 @@
-# 求解器规模基准专用（docs/archive/superpowers/specs/2026-08-23-solver-and-mapping-oss-
-# adoption.md §9/§11.2）：rig/example_auv.yaml 去掉 cameras 块和两个相机的
-# frame_tree 条目，只保留 IMU/声呐/深度。
+# 【无相机机体】example_auv.yaml 去掉 cameras 块和两个相机的 frame_tree 条目，
+# 只留 IMU/声呐/深度；其余字段（含 imu_noise、时钟偏移）与其完全一致。
 #
-# 为什么需要单独一份、不能直接复用 example_auv.yaml：`apps/replay_demo` 和
-# `apps/synth_bag_gen` 都用 `config.rig.cameras_size() > 0` 判断要不要跑双目立体
-# 稠密深度 + acoustic-optic 融合那条路径（每个 keyframe 都是逐像素处理，12 帧的
-# synthetic_smoke 场景就已经产出 340 万 map evidence points）——这条路径和"求解器
-# 求解位姿图快不快"完全是两回事，但 1000 个 keyframe 时会成为压倒性的墙钟瓶颈，
-# 把求解器本身的耗时对比完全淹没掉（实测：gauss_newton_v1 在 1000 keyframe 上第
-# 一次 LM 迭代很快完成，但接下来的 acoustic-optic 逐像素融合跑了 100 秒以上还没
-# 结束）。用一份没有相机的 rig，让 synth_bag_gen 不写相机话题、replay_demo 不跑
-# 这条稠密路径，压力场景才能干净地只测求解器在大图上的表现，不是被无关的稠密
-# 视觉处理主导。
+# 为什么需要无相机的版本：synth_bag_gen 和 replay_demo 都用"rig 是否带相机"
+# 决定要不要跑逐像素的声光稠密视觉路径——12 帧的 synthetic_smoke 场景就会
+# 产出约 340 万 map evidence points，千帧规模时其耗时完全淹没求解器本身。
+# 无相机的 rig 让 synth_bag_gen 不写相机话题、replay_demo 不跑这条稠密路径，
+# 求解器规模基准和惯性闭环实验才能干净地只测自己关心的部分。
+#
+# 使用方：求解器规模基准、experiment/synthetic_imu_preintegration.yaml。
 
 calibration_version: "example_auv_sonar_only_v1"
 
@@ -40,6 +36,7 @@ time_offset_provenance:
 vehicle_state_sensors:
   - rov-state
 
+# 与 example_auv.yaml 同值：同一 scenario 换 rig 时 /raw/imu 流逐字节不变。
 imu_noise:
   sigma_gyro_c: 1.6968e-4
   sigma_accel_c: 2.0e-3

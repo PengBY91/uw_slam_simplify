@@ -1,19 +1,24 @@
-# "跑什么数据"：加载进 apps/synth_bag_gen.cpp 的 ScenarioOptions（通过
-# --experiment，见 runtime/include/uw/runtime/config.hpp 的 LoadScenarioConfig）。
-# 字段名与 ScenarioOptions 一一对应；显式传入的同名 CLI 参数（--seed 等）会
-# 覆盖这里的值。
+# 【冒烟基线场景】"跑什么数据"：这些字段是 apps/synth_bag_gen 生成合成 bag 的
+# 全部输入（一一对应 include/runtime/config.hpp 的 ScenarioConfig），replay_demo
+# 不读它们。只描述数据、不描述算法；显式 CLI 参数（--seed 等）覆盖同名字段。
 
-seed: 42
-num_keyframes: 12
-radius_m: 8.0
-arc_radians: 1.4
-depth_m: 12.0
+seed: 42              # 随机种子，确定性回放的基础。synth_bag_gen 内部按噪声用途
+                      # 拆成多条独立 RNG 流（相对位姿/声呐/视觉 landmark 各一条），
+                      # 互不干扰。
+num_keyframes: 12     # keyframe 数量
+radius_m: 8.0         # 轨迹几何：机体沿半径 8m 的水平圆弧运动
+arc_radians: 1.4      # 总扫过 1.4 rad ≈ 80° 短弧
+depth_m: 12.0         # 水深 12m（正向下）；world frame 为 Z-up，位姿 z = -12
 
-noise:
-  relative_pose_noise_m: 0.02
-  sonar_range_noise_m: 0.03
-  sonar_bearing_noise_rad: 0.01
+noise:                # 三路噪声各自的 σ（各自独立 RNG 流）
+  relative_pose_noise_m: 0.02     # 相对位姿证据噪声（black_box_vio 读的就是它）
+  sonar_range_noise_m: 0.03       # 声呐距离量测噪声
+  sonar_bearing_noise_rad: 0.01   # 声呐方位量测噪声
 
+# 世界系（Z-up，故 z 为负）的声呐点目标。目标是否同时进相机视场由真实几何
+# 决定：这 3 个目标都不在相机窄视场内（要演示相机+声呐同时看到目标，用
+# acoustic_optic_demo.yaml）。注意改目标数量/位置会改变噪声流的消耗序列，
+# ATE 跟着变是预期行为，不要误读成前端/因子的问题。
 sonar_targets_world:
   - [2.0, 3.0, -13.0]
   - [6.0, 6.0, -11.5]

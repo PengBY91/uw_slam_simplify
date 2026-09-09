@@ -1,37 +1,49 @@
-# "怎么跑"：跟 experiment/synthetic_smoke.yaml 结构完全一样，唯一区别是
-# scenario 指向 scenario/acoustic_optic_demo.yaml——一个专门用来演示"相机真的
-# 看得到目标、声光关联真的能 ACCEPTED"的场景（默认 synthetic_smoke.yaml 的
-# 三个目标经真实几何计算都不在相机窄视场内，见对应 plan 文档）。
+# 【声光融合演示】与 synthetic_smoke.yaml 唯一区别是 scenario 换成
+# acoustic_optic_demo.yaml——全仓库唯一把声呐目标特意放进相机窄视场的场景，
+# 因此声光关联能产生真实的 ACCEPTED；本文件也是唯一开启 min_acoustic_optic_*
+# gate 的实验。
 
+# ---- 三层引用。路径相对 configs/ 目录（不是本文件所在目录）----
+#   rig       机体标定：传感器外参/内参/噪声模型
+#   scenario  合成数据参数：轨迹/噪声/声呐目标/seed（只被 synth_bag_gen 消费）
+#   defaults  平台级算法默认值：求解器/证据权重上限/CFAR 参数/回环开关
 rig: rig/example_auv.yaml
 scenario: scenario/acoustic_optic_demo.yaml
 defaults: defaults/platform.yaml
 
+# ---- 算法选择。写不认识的值 replay_demo 启动即报错，不会静默回退 ----
+# frontends.optical / frontends.sonar / map_backend 目前各自只有一个受支持的
+# 实现，还没有第二实现可切换。
 frontends:
   optical: stereo_depth_frontend_v1
   sonar: sonar_cfar_frontend_v1
 
+# 本实验管线的因子类型。声明性文档：loader 不解析，实际构造哪些因子由 bag 里
+# 存在的证据话题决定。
 factor_builders:
   - relative_pose_v1
   - sonar_range_v1
   - depth_v1
 
-# estimator_mode 是历史字段名，当前选择相对位姿输入来源，不切换求解器。
-# black_box_vio 读取 bag 中外部/预生成量测；stereo_landmark_vo 从双目图像计算量测。
+# 相对位姿证据来源（历史字段名，不切换求解器；所有取值最终喂同一个
+# Gauss-Newton 求解器）：
+#   black_box_vio       读 bag 里 /evidence/relative_pose 的预生成量测（synth_bag_gen 写入） ← 本文件
+#   stereo_landmark_vo  从 /raw/camera/{left,right} 实时计算（需 rig 带相机）
+#   imu_preintegration  IMU 预积分惯性推算（synth_bag_gen 据此生成 /raw/imu 流）
 estimator_mode: black_box_vio
-# map_backend 是预留的地图实现选择，目前只有 submap_point_cloud_v1。
-map_backend: submap_point_cloud_v1
+map_backend: submap_point_cloud_v1   # 预留的地图实现选择，当前唯一受支持值
 
 output:
-  trajectory_format: tum
-  write_run_manifest: true
+  trajectory_format: tum    # 声明性字段，loader 不解析
+  write_run_manifest: true  # 写不可变 RunManifest（记录实际生效的配置/标定/代码哈希）
 
-# This is the one experiment whose scenario (scenario/acoustic_optic_demo.yaml)
-# deliberately places a sonar target inside the camera's narrow FOV at kf0, so
-# a real ACCEPTED acoustic-optic association is actually achievable here (as
-# of 2026-08-23, seed 42 gives 3 accepted / 3 acoustic-optic map points across
-# 12 keyframes) -- see configs/README.md and application::CountDepthContributions
-# for why this is the only experiment where these two gates are enabled.
+# ---- 验收 gate：replay_demo 求解完逐条检查，任一不满足即 exit 2（输出仍照常写出）----
+# 实测基线（2026-08-23，seed 42）：12 个 keyframe 中 3 条声光关联 ACCEPTED、
+# 3 个 acoustic-optic 地图点。其余 gate 继承默认（require_converged 开，阈值类关）。
 gates:
+  # 声光关联 ACCEPTED 数下限：只统计声光融合贡献的关联（optical-only 深度点
+  # 不计入）。只在"目标真的进相机视场"的场景开；目标不在视场的实验开了它就
+  # 只能靠伪造关联变绿（明确不做）。
   min_acoustic_optic_accepted: 1
+  # 声光贡献的地图点数下限，统计口径同上。
   min_acoustic_optic_map_points: 1

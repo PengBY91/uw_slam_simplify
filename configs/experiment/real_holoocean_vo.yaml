@@ -1,41 +1,52 @@
-# 第一个真实（非合成）数据的端到端定量验证 experiment：consume
+# 【真实数据 VO】第一个真实（非合成）数据的端到端回放实验。
+# 用法：replay_demo --bag <真实 bag> --experiment <本文件>。bag 由
 # adapters/holoocean/uw_holoocean_adapter/record_session.py 在真实 HoloOcean
-# （OpenWater-HoveringCamera，Windows 原生渲染）上录制的 bag（/tmp/real_session.mcap，
-# 78MB，50 个 keyframe，只有 /raw/camera/{left,right}、/gt/state、/evidence/depth
-# 三类话题——这个场景没有声呐传感器，也没有录 IMU/DVL，所以这次跑不出
-# sonar_range_v1 因子，只有 relative_pose（来自 stereo_landmark_vo_frontend 实时算，
-# 不是从 bag 读桩）+ depth_v1 两类证据参与位姿图。
+# （OpenWater-HoveringCamera 场景）录制（约 76MB、50 个 keyframe），只有
+# /raw/camera/{left,right}、/gt/state、/evidence/depth 三类话题——没有声呐、
+# 没录 IMU/DVL，所以位姿图里实际只有 relative_pose（本文件选择
+# stereo_landmark_vo 从双目实时算）+ depth 两类证据，sonar_range_v1 自然不出现。
 #
-# rig 换成 example_auv_real_camera.yaml（真实标定的内参/畸变/立体基线，见该文件
-# 头部注释）；frontends.landmark_detector 换成 harris_corner——bright_blob（默认）
-# 是给 synth_bag_gen 的合成高亮方块调的固定阈值检测器，在真实水下渲染画面上找不到
-# 东西（见 project 记忆：HarrisCornerDetector 已经在这个真实 bag 的全部 50 帧上验证过，
-# 每帧都能顶满 max_corners=200）。
-#
-# scenario 字段这里只是满足 config loader 的层级要求——apps/replay_demo 不读取
-# ScenarioConfig 的任何字段（那是 synth_bag_gen 生成合成数据专用的），所以复用
-# synthetic_smoke.yaml 场景文件的内容对这次真实数据回放没有影响。
+# 已知边界（2026-08-23 复核）：ATE 4.32m、求解器 30 次迭代 stalled。根因是
+# 真实机体的立体基线不是纯 y 轴（x/z 分量占基线 15-17%，见 rig 文件注释），
+# stereoRectify 为行对齐必须施加真实旋转、主点大幅偏离图像中心，而 VO 前端的
+# 角点/匹配/RANSAC 只在近平行基线的合成数据上调过。本实验验证的是"真实数据
+# 能进入离线 VO 管线"，不代表真实重建已跑通。
 
+# ---- 三层引用。路径相对 configs/ 目录（不是本文件所在目录）----
+# rig 换成真实标定值（真实内参/畸变/立体基线，来源见该文件注释）。
+# scenario 对真实数据回放没有影响——replay_demo 不读 scenario 的任何字段
+# （那层只被 synth_bag_gen 消费），这里填一份合成场景只为满足 loader 的层级要求。
 rig: rig/example_auv_real_camera.yaml
 scenario: scenario/synthetic_smoke.yaml
 defaults: defaults/platform.yaml
 
+# ---- 算法选择。写不认识的值 replay_demo 启动即报错，不会静默回退 ----
+# landmark_detector 换成 harris_corner：默认的 bright_blob 是给合成高亮方块调的
+# 固定阈值检测器，真实水下渲染画面上找不到目标；harris_corner 已在这个真实
+# bag 的全部 50 帧上验证过（每帧都能检满角点上限）。
 frontends:
   optical: stereo_depth_frontend_v1
   sonar: sonar_cfar_frontend_v1
   landmark_detector: harris_corner
 
+# 本实验管线的因子类型。声明性文档：loader 不解析，实际构造哪些因子由 bag 里
+# 存在的证据话题决定（本 bag 无声呐话题，sonar_range_v1 不会出现）。
 factor_builders:
   - relative_pose_v1
   - sonar_range_v1
   - depth_v1
 
-# estimator_mode 是历史字段名，当前选择相对位姿输入来源，不切换求解器。
-# black_box_vio 读取 bag 中外部/预生成量测；stereo_landmark_vo 从双目图像计算量测。
+# 相对位姿证据来源（历史字段名，不切换求解器；所有取值最终喂同一个
+# Gauss-Newton 求解器）：
+#   black_box_vio       读 bag 里 /evidence/relative_pose 的预生成量测（synth_bag_gen 写入）
+#   stereo_landmark_vo  从 /raw/camera/{left,right} 实时计算（需 rig 带相机） ← 本文件
+#   imu_preintegration  IMU 预积分惯性推算（synth_bag_gen 据此生成 /raw/imu 流）
 estimator_mode: stereo_landmark_vo
-# map_backend 是预留的地图实现选择，目前只有 submap_point_cloud_v1。
-map_backend: submap_point_cloud_v1
+map_backend: submap_point_cloud_v1   # 预留的地图实现选择，当前唯一受支持值
 
 output:
-  trajectory_format: tum
-  write_run_manifest: true
+  trajectory_format: tum    # 声明性字段，loader 不解析
+  write_run_manifest: true  # 写不可变 RunManifest（记录实际生效的配置/标定/代码哈希）
+
+# 未写 gates 块：继承默认（只开 require_converged）。按上面已知边界，当前实跑
+# 会因求解器 stalled 触发该 gate 失败（exit 2）——这是如实呈现，不是配置漏项。

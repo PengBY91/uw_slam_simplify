@@ -1,46 +1,30 @@
-# RigCalibrationSnapshot 变体：跟 example_auv.yaml 结构完全一致，唯一区别是
-# cameras 块换成了真实标定值，供真实 HoloOcean 数据管线（adapters/holoocean/
-# record_session.py 录制的真实 bag、以后接真实数据的 apps/replay_demo 运行）
-# 使用——不要在合成 demo（synthetic_smoke*.yaml）里引用这份文件，
-# apps/synth_bag_gen.cpp 会用 cameras 块的 width/height/k_matrix_row_major
-# 生成合成图像，换成这份文件会改变合成 demo 已经在跟踪的 ATE 数字（见
-# example_auv.yaml 头部注释和 README「运行端到端 Demo」）。
+# 【真实标定机体】与 example_auv.yaml 的区别只有两处：cameras 块换成真实标定
+# 值；frame_tree 里 camera_right_link 的平移换成真实立体基线。其余（camera_left
+# 的安装位置、sonar/imu/depth 模型、时钟偏移）沿用 example_auv.yaml 的值。
+# 供真实 HoloOcean 数据管线使用（experiment/real_holoocean_vo.yaml）。
+# 不要在合成 demo 里引用这份文件：synth_bag_gen 拿 cameras 块渲染合成图像，
+# 换成真实值会改变合成实验在跟踪的 ATE 基线。
 #
-# cameras 块是 2026-08-21 用 adapters/holoocean/uw_holoocean_adapter/
-# calibrate_camera.py 对真实 OpenWater-HoveringCamera 场景（HoloOcean
-# 2.3.0，Windows 原生渲染）跑棋盘格标定得到的：7x9 棋盘格（0.25m 方格）、
-# 每 15 个 pose 重启一次 HoloOcean session（绕过长会话检测率塌陷的问题，
-# 见 calibrate_camera.py 的 run_calibration_session 文档字符串）、迭代剔除
-# 重投影误差最大的视角、用 90° FOV 假设做优化器初值并固定 fx=fy。
-# 左相机 17 个有效视角 rms=0.46px，右相机 16 个有效视角 rms=0.43px，
-# 立体基线 rms=0.51px——都是亚像素级，数字本身可信。原始报告：
-# C:\Users\pengb\calib_debug\calib_full5.yaml（Windows 主机本地，未拷进本仓库）。
+# 标定来源（2026-08-21，adapters/holoocean/uw_holoocean_adapter/calibrate_camera.py
+# 对真实 OpenWater-HoveringCamera 场景做棋盘格标定，7x9 棋盘 / 0.25m 方格）：
+# 左相机 17 个有效视角 rms=0.46px、右相机 16 个 rms=0.43px、立体基线 rms=0.51px，
+# 均为亚像素级。
 #
-# frame_tree 里 camera_right_link 相对 camera_left_link 的平移量已经在
-# 2026-08-21（同一天，稍后）用标定报告里的 left_to_right_transform_row_major
-# （R 接近单位阵，最大偏差 0.0061，满足 StereoGeometry::Resolve 要求的纯平移
-# 假设）套 calibrate_camera.py 新增的 stereo_translation_to_body_frame()
-# 算出来了——这个函数把 OpenCV 立体外参（相机光学系：X-right/Y-down/Z-forward）
-# 转换到这里 frame_tree 用的机体系（x前/y左/z上），跟
-# include/sensor_models/camera_model.cpp 的 OpticalFromBodyRotation() 严格保持
-# 一致，见该函数的单元测试（tests/test_calibrate_camera.py，已知变换往返验证）。
-# 结果不是纯 y 轴偏移：右相机相对左相机的机体系偏移是
-# (x=+0.0386m, y=-0.2272m, z=-0.0135m)（模长 0.2308m，匹配标定测出的基线量级），
-# 说明真实双目基线不是像占位值假设的那样只沿 y 轴——x/z 分量约占基线的 15-17%，
-# 不是可以忽略的噪声。
+# 真实基线不是纯 y 轴：右相机相对左相机的机体系偏移 (x=+0.0386, y=-0.2272,
+# z=-0.0135)m，模长 0.231m，x/z 分量约占 15-17%。这会使 stereoRectify 为行
+# 对齐施加真实旋转、主点明显偏离图像中心——在近平行基线上调好的 VO 前端在它
+# 上面表现会显著变差（real_holoocean_vo.yaml 的已知边界即源于此）。这是真实
+# rig 的固有几何特性，不是标定错误。
 #
-# 【仍然未验证、没有跟着这次标定更新的】：camera_left_link 自己相对 base_link
-# 的绝对平移（这里沿用占位值 x=0.15,y=0.06,z=0）——这次标定只测出了左右相机之间
-# 的*相对*基线，没有测出任一相机相对 AUV body 原点的绝对安装位置（那需要在
-# Unreal Editor 里量 HoveringAUV 骨架网格的 CameraLeftSocket 相对 body 原点的
-# 偏移，不是这次标定管线能做的）。同理，两个相机的旋转子矩阵仍然保持跟
-# example_auv.yaml 一致的单位阵——测出的 R 偏差（最大 0.0061）当作标定噪声/
-# 忽略不计的安装倾斜处理，不是刻意设计的机体系旋转。sonar_link/imu_link 的
-# frame_tree、imu_noise、sonar_beam_models、depth_models 跟 example_auv.yaml
-# 完全一致（这次标定没碰这些）。
+# 仍未验证、沿用占位值的部分：camera_left_link 相对 base_link 的绝对平移
+# （本次标定只测出左右相机的相对基线，没测相机相对机体原点的安装位置）；两个
+# 相机的旋转子矩阵保持单位阵（标定出的左右旋转差最大 0.0061，当作安装噪声
+# 忽略）。另外 imu_noise 比 example_auv.yaml 少偏置随机游走两个字段——这份
+# rig 目前只回放无 IMU 的真实双目 bag，IMU 噪声模型暂无消费者。
 
 calibration_version: "example_auv_real_camera_v1"
 
+# camera_right_link 的平移 = 左相机安装位置 + 真实立体基线（见头部注释）。
 frame_tree:
   - parent_frame: base_link
     child_frame: imu_link
@@ -59,6 +43,7 @@ frame_tree:
     transform_row_major:
       [1,0,0,0.1, 0,1,0,0, 0,0,1,-0.05, 0,0,0,1]
 
+# 真实标定值：512x512、fx≈250、非零 plumb_bob 畸变（占位 rig 是零畸变）。
 cameras:
   - sensor_id: camera_left
     width: 512
@@ -75,6 +60,8 @@ cameras:
     distortion: [-0.022177,0.026051,0.001799,-0.000271,-0.017737]
     distortion_model: plumb_bob
 
+# 时钟偏移：相机来自标定 session 实测，其余来自系统时钟对齐（占位 0.0）。
+# 符号约定 t_reference = t_sensor_capture + 偏移，上限 ±10s。
 time_offset_seconds:
   camera_left: 0.0
   camera_right: 0.0
@@ -94,6 +81,7 @@ time_offset_provenance:
 vehicle_state_sensors:
   - rov-state
 
+# 沿用 example_auv.yaml 的占位值（本次标定没碰 IMU），仅缺偏置随机游走两字段。
 imu_noise:
   sigma_gyro_c: 1.6968e-4
   sigma_accel_c: 2.0e-3
@@ -102,6 +90,7 @@ imu_noise:
   rate_hz: 200
   gravity_mps2: 9.80665
 
+# 声呐成像几何模型（同 example_auv.yaml）。
 sonar_beam_models:
   - sensor_id: sonar0
     horizontal_fov_rad: 2.09
@@ -110,6 +99,7 @@ sonar_beam_models:
     nominal_speed_of_sound_mps: 1500.0
     sonar_enabled: true
 
+# 深度计模型（同 example_auv.yaml）。depth_m 正向下，位姿 z = -depth_m。
 depth_models:
   - sensor_id: depth0
     noise_sigma_m: 0.05

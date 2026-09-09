@@ -1,23 +1,21 @@
-# A dedicated, additive scenario. The one difference
-# from scenario/synthetic_smoke.yaml is the target position: placed directly
-# ahead of kf0's camera (base_link -> camera_left_link translation is
-# (0.15, 0.06, 0) in configs/rig/example_auv.yaml) so it sits inside BOTH
-# the camera's narrow field of view and the sonar's wide one at the start
-# of the trajectory — configs/scenario/synthetic_smoke.yaml's three targets
-# never satisfy the camera FOV constraint, by real geometry (see the plan
-# doc), so this scenario exists purely to demonstrate a real accepted
-# acoustic-optic association, not to replace the default scenario.
+# 【声光演示场景】与 synthetic_smoke.yaml 的唯一区别是声呐目标：只放 1 个，
+# 位置在 kf0 相机正前方约 5m 处（坐标 = 前向 5m + 相机安装偏移 x=0.15/y=0.06，
+# 见 rig/example_auv.yaml），使其同时落在相机窄视场和声呐宽视场内——全仓库
+# 唯一"两种传感器都真实看得到目标"的场景，专门让声光关联产生真实的 ACCEPTED。
+# synth_bag_gen 会把落进相机视场的声呐目标额外画进双目图像（不止当普通 VO
+# landmark），关联器才有光学候选可匹配。
 
-seed: 42
-num_keyframes: 12
-radius_m: 8.0
-arc_radians: 1.4
-depth_m: 12.0
+seed: 42              # 随机种子
+num_keyframes: 12     # keyframe 数量
+radius_m: 8.0         # 半径 8m 水平圆弧
+arc_radians: 1.4      # 扫过 1.4 rad ≈ 80° 短弧
+depth_m: 12.0         # 水深 12m（正向下）；world frame 为 Z-up，位姿 z = -12
 
-noise:
+noise:                # 三路噪声各自的 σ
   relative_pose_noise_m: 0.02
   sonar_range_noise_m: 0.03
   sonar_bearing_noise_rad: 0.01
 
+# 目标深度与轨迹一致（z=-12），水平位置见头部注释的推导。
 sonar_targets_world:
   - [5.15, 0.06, -12.0]

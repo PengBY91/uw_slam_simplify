@@ -1,48 +1,51 @@
-# "怎么跑"：选择 frontend/相对位姿输入模式/reliability policy/map backend/算力预算
-# （架构文档第 14.2 节）。可通过 --experiment 传给 apps/synth_bag_gen.cpp 和
-# apps/replay_demo；rig/scenario/defaults 三层已被完整加载。frontends/
-# map_backend 目前仍只对应一条固定管线（还没有第二条实现可切换），但下面这些
-# 值必须精确匹配那条实现的标识符——写错会在 replay_demo 启动时直接报错退出，
-# 不会被静默忽略；estimator_mode 选择相对位姿输入来源，见 configs/README.md。
+# 【冒烟基线】80° 短弧合成场景，相对位姿证据直接从 bag 读取。
+# 用法：--experiment <本文件> 传给 apps/synth_bag_gen（生成合成 MCAP bag）或
+# apps/replay_demo（回放求解并按 gates 验收）。同场景的"双目实时算相对位姿"
+# 变体见 synthetic_smoke_vo.yaml（与本文件只差 estimator_mode 一处）。
 
+# ---- 三层引用。路径相对 configs/ 目录（不是本文件所在目录）----
+#   rig       机体标定：传感器外参/内参/噪声模型
+#   scenario  合成数据参数：轨迹/噪声/声呐目标/seed（只被 synth_bag_gen 消费）
+#   defaults  平台级算法默认值：求解器/证据权重上限/CFAR 参数/回环开关
 rig: rig/example_auv.yaml
 scenario: scenario/synthetic_smoke.yaml
 defaults: defaults/platform.yaml
 
+# ---- 算法选择。写不认识的值 replay_demo 启动即报错，不会静默回退 ----
+# frontends.optical / frontends.sonar / map_backend 目前各自只有一个受支持的
+# 实现，还没有第二实现可切换。
 frontends:
   optical: stereo_depth_frontend_v1
   sonar: sonar_cfar_frontend_v1
 
+# 本实验管线的因子类型。声明性文档：loader 不解析，实际构造哪些因子由 bag 里
+# 存在的证据话题决定。
 factor_builders:
   - relative_pose_v1
   - sonar_range_v1
   - depth_v1
 
-# estimator_mode 是历史字段名，当前选择相对位姿输入来源，不切换求解器。
-# black_box_vio 读取 bag 中外部/预生成量测；stereo_landmark_vo 从双目图像计算量测。
-estimator_mode: black_box_vio     # 对应架构文档第 8.1 节；原生紧耦合尚未实现，不能通过此字段选择
-# map_backend 是预留的地图实现选择，目前只有 submap_point_cloud_v1。
-map_backend: submap_point_cloud_v1
+# 相对位姿证据来源（历史字段名，不切换求解器；所有取值最终喂同一个
+# Gauss-Newton 求解器）：
+#   black_box_vio       读 bag 里 /evidence/relative_pose 的预生成量测（synth_bag_gen 写入） ← 本文件
+#   stereo_landmark_vo  从 /raw/camera/{left,right} 实时计算（需 rig 带相机）
+#   imu_preintegration  IMU 预积分惯性推算（synth_bag_gen 据此生成 /raw/imu 流）
+estimator_mode: black_box_vio
+map_backend: submap_point_cloud_v1   # 预留的地图实现选择，当前唯一受支持值
 
 output:
-  trajectory_format: tum
-  write_run_manifest: true
+  trajectory_format: tum    # 声明性字段，loader 不解析
+  write_run_manifest: true  # 写不可变 RunManifest（记录实际生效的配置/标定/代码哈希）
 
-# P0 非放空 gate（见 docs/archive/uw-slam-production-readiness-and-roadmap-2026-08-21.md
-# 5.5/7）：实测 ATE rmse≈0.0999m、12/12 matched poses（2026-08-26，
-# apps/synth_bag_gen.cpp 给 pose/sonar/landmark 噪声拆分独立 RNG 流之后的新
-# 基线——拆流前的 0.0666m 依赖的是三路噪声共享一个 mt19937_64、彼此消耗顺序
-# 意外耦合产生的某一次具体实现，不是这个 seed 的稳定值，见 README「跨 seed
-# 有波动」；阈值留了约2倍余量而不是卡实测值，避免正常波动导致 CI flaky）。
+# ---- 验收 gate：replay_demo 求解完逐条检查，任一不满足即 exit 2（输出仍照常写出）----
+# 实测基线（2026-08-26）：ATE rmse≈0.100m、12/12 matched。阈值留约 2 倍余量而非
+# 卡实测值——ATE 跨 seed 有正常波动，卡太紧会造成 CI flaky。
 gates:
-  require_converged: true
-  max_ate_rmse_m: 0.2
-  min_matched_ate_poses: 10
-  require_nonempty_map: true
-  # min_acoustic_optic_accepted/min_acoustic_optic_map_points stay disabled
-  # (default 0) here on purpose: scenario/synthetic_smoke.yaml's three
-  # targets never fall inside the camera's narrow FOV by real geometry (see
-  # this scenario's own comment and configs/experiment/acoustic_optic_demo.yaml,
-  # the one experiment whose scenario is built specifically to be visible to
-  # both sensors). Enabling these here would require faking acceptance to
-  # keep this experiment green, which we don't do — see CountDepthContributions.
+  require_converged: true     # 求解器必须收敛（此 gate 默认开，其余 gate 默认关）
+  max_ate_rmse_m: 0.2         # ATE rmse 上限（米），<0 = 不启用
+  min_matched_ate_poses: 10   # 参与 ATE 对齐的位姿数下限
+  require_nonempty_map: true  # 地图非空（optical-only 深度点即可满足）
+  # min_acoustic_optic_accepted / min_acoustic_optic_map_points 保持默认关（0）：
+  # 本场景的 3 个声呐目标按真实几何都不在相机窄视场内（见 scenario 文件注释），
+  # 声光关联不可能 ACCEPTED，开这两个 gate 只能靠伪造关联变绿——明确不做。
+  # 全仓库只有 acoustic_optic_demo.yaml 开它们（那是唯一目标可见的场景）。

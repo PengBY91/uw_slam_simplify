@@ -1,10 +1,21 @@
+# 【IMU 预积分闭环】PREP-B-01 合成验证：IMU 预积分 + 声呐 range + 深度三路
+# 证据的端到端回放。estimator_mode: imu_preintegration 同时驱动两端——
+# synth_bag_gen 据此生成 /raw/imu 流（含静止预滚段和显式 /keyframe/boundary
+# 关键帧边界），replay_demo 改用预积分前端做惯性推算：此模式不读 bag 里的
+# 相对位姿证据，/keyframe/boundary 是积分区间的唯一时间契约。
+#
+# rig 特意用无相机版本：带相机的 rig 会触发 replay 的逐像素声光稠密路径，
+# 与惯性闭环无关且耗时会淹没求解器本身（见 rig/example_auv_sonar_only.yaml
+# 注释）。未写的块（frontends/map_backend/output/gates）全部走默认值。
+
+# ---- 三层引用。路径相对 configs/ 目录（不是本文件所在目录）----
 rig: rig/example_auv_sonar_only.yaml
 scenario: scenario/synthetic_smoke.yaml
 defaults: defaults/platform.yaml
 
-factor_builders:
+factor_builders:   # 声明性文档：loader 不解析
   - imu_preintegration_v1
   - sonar_range_v1
   - depth_v1
 
-estimator_mode: imu_preintegration
+estimator_mode: imu_preintegration   # 相对位姿来源 = IMU 预积分（含义见头部注释）
